@@ -128,6 +128,29 @@ body.loading::before {
 /* Form Elements */
 .form-group {
   margin-bottom: 16px;
+  position: relative;
+}
+
+.form-group.error input,
+.form-group.error textarea,
+.form-group.error select {
+  border-color: #ef4444;
+  background-color: #fef2f2;
+}
+
+.form-group.error label {
+  color: #dc2626;
+}
+
+.form-group .error-message {
+  color: #dc2626;
+  font-size: 12px;
+  margin-top: 4px;
+  display: none;
+}
+
+.form-group.error .error-message {
+  display: block;
 }
 
 .form-row {

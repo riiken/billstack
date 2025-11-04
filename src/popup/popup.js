@@ -15,6 +15,8 @@ let invoiceItems = [];
 let currentInvoiceNumber = 1;
 let isInitializing = true; // Prevent updates during initialization
 let hasInitialized = false; // Prevent multiple initializations
+let autoSaveInterval = null; // Auto-save timer
+let lastAutoSaveData = null; // Track last saved data to avoid duplicate saves
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
@@ -33,9 +35,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadBusinessSettings();
     await loadLastInvoiceNumber();
     await checkUsage();
+    await loadClientTemplatesDropdown();
 
     // Setup event listeners
     initializeEventListeners();
+
+    // Setup real-time validation
+    setupRealTimeValidation();
+
+    // Setup keyboard shortcuts
+    setupKeyboardShortcuts();
 
     // Setup form (still hidden) - but DON'T add items yet
     setDefaultDates();
@@ -44,8 +53,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Mark initialization complete
     isInitializing = false;
 
-    // Add initial item
-    addInitialItem();
+    // Restore draft if exists
+    await restoreDraft();
+
+    // Add initial item (only if no draft was restored)
+    if (invoiceItems.length === 0) {
+      addInitialItem();
+    }
+
+    // Start auto-save timer
+    startAutoSave();
   } catch (error) {
     console.error('Initialization error:', error);
     isInitializing = false;
@@ -69,6 +86,20 @@ function initializeEventListeners() {
   document.getElementById('addItemBtn').addEventListener('click', addItem);
   document.getElementById('saveDraftBtn').addEventListener('click', saveDraft);
   document.getElementById('generatePdfBtn').addEventListener('click', generatePDF);
+
+  // Client templates
+  document.getElementById('saveClientTemplateBtn').addEventListener('click', saveClientTemplate);
+  document.getElementById('loadClientTemplate').addEventListener('change', loadClientTemplate);
+  document.getElementById('deleteClientTemplateBtn').addEventListener('click', () => {
+    const dropdown = document.getElementById('loadClientTemplate');
+    const selectedKey = dropdown.value;
+    if (selectedKey) {
+      const selectedName = dropdown.options[dropdown.selectedIndex].text;
+      if (confirm(`Delete client template "${selectedName}"?`)) {
+        deleteClientTemplate(selectedKey);
+      }
+    }
+  });
 
   // Client state change (for GST calculation)
   document.getElementById('clientState').addEventListener('change', () => {
@@ -178,6 +209,415 @@ function updateBusinessInfoDisplay() {
     infoBox.className = 'info-box';
     infoBox.innerHTML = '<p class="setup-prompt">⚠️ Please set up your business details in Settings first</p>';
   }
+}
+
+// ===== CLIENT TEMPLATES =====
+
+// Load client templates into dropdown
+async function loadClientTemplatesDropdown() {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get(null, (items) => {
+      const clientTemplates = Object.keys(items)
+        .filter(key => key.startsWith('client_template_'))
+        .map(key => ({ key, ...items[key] }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      const dropdown = document.getElementById('loadClientTemplate');
+
+      // Clear existing options except first
+      dropdown.innerHTML = '<option value="">-- Select a client --</option>';
+
+      // Add client templates
+      clientTemplates.forEach(client => {
+        const option = document.createElement('option');
+        option.value = client.key;
+        option.textContent = client.name;
+        dropdown.appendChild(option);
+      });
+
+      resolve();
+    });
+  });
+}
+
+// Save current client as template
+function saveClientTemplate() {
+  const clientName = document.getElementById('clientName').value;
+  const clientGSTIN = document.getElementById('clientGSTIN').value;
+  const clientState = document.getElementById('clientState').value;
+  const clientAddress = document.getElementById('clientAddress').value;
+  const clientEmail = document.getElementById('clientEmail').value;
+
+  // Validation
+  if (!clientName || !clientState) {
+    showToast('Please fill in Client Name and State to save template', 'error');
+    return;
+  }
+
+  // Create template
+  const template = {
+    name: clientName,
+    gstin: clientGSTIN,
+    state: clientState,
+    address: clientAddress,
+    email: clientEmail,
+    savedAt: Date.now()
+  };
+
+  // Save to storage
+  const templateKey = `client_template_${clientName.replace(/\s+/g, '_').toLowerCase()}`;
+
+  chrome.storage.sync.set({ [templateKey]: template }, () => {
+    showToast(`Client "${clientName}" saved as template!`, 'success');
+    loadClientTemplatesDropdown();
+  });
+}
+
+// Load selected client template
+function loadClientTemplate() {
+  const dropdown = document.getElementById('loadClientTemplate');
+  const deleteBtn = document.getElementById('deleteClientTemplateBtn');
+  const selectedKey = dropdown.value;
+
+  if (!selectedKey) {
+    // Hide delete button when no template selected
+    deleteBtn.style.display = 'none';
+    return;
+  }
+
+  // Show delete button
+  deleteBtn.style.display = 'block';
+
+  chrome.storage.sync.get([selectedKey], (result) => {
+    const template = result[selectedKey];
+
+    if (template) {
+      // Fill form with template data
+      document.getElementById('clientName').value = template.name || '';
+      document.getElementById('clientGSTIN').value = template.gstin || '';
+      document.getElementById('clientState').value = template.state || '';
+      document.getElementById('clientAddress').value = template.address || '';
+      document.getElementById('clientEmail').value = template.email || '';
+
+      // Trigger GST calculation
+      if (!isInitializing) calculateTotals();
+
+      showToast(`Client "${template.name}" loaded!`, 'success');
+    }
+  });
+}
+
+// Delete client template
+function deleteClientTemplate(templateKey) {
+  chrome.storage.sync.remove([templateKey], () => {
+    showToast('Client template deleted', 'success');
+
+    // Reset dropdown
+    document.getElementById('loadClientTemplate').value = '';
+    document.getElementById('deleteClientTemplateBtn').style.display = 'none';
+
+    // Reload dropdown
+    loadClientTemplatesDropdown();
+  });
+}
+
+// ===== DRAFT AUTO-SAVE =====
+
+// Start auto-save timer (every 30 seconds)
+function startAutoSave() {
+  // Clear existing timer if any
+  if (autoSaveInterval) {
+    clearInterval(autoSaveInterval);
+  }
+
+  // Auto-save every 30 seconds
+  autoSaveInterval = setInterval(() => {
+    autoSaveDraft();
+  }, 30000); // 30 seconds
+}
+
+// Auto-save current draft
+function autoSaveDraft() {
+  // Skip if initializing
+  if (isInitializing) return;
+
+  // Collect current form data
+  const draftData = {
+    clientName: document.getElementById('clientName').value,
+    clientGSTIN: document.getElementById('clientGSTIN').value,
+    clientState: document.getElementById('clientState').value,
+    clientAddress: document.getElementById('clientAddress').value,
+    clientEmail: document.getElementById('clientEmail').value,
+    invoiceDate: document.getElementById('invoiceDate').value,
+    dueDate: document.getElementById('dueDate').value,
+    items: invoiceItems.map((item, index) => {
+      const itemElement = document.querySelector(`[data-item-id="${item.id}"]`);
+      if (itemElement) {
+        return {
+          description: itemElement.querySelector('.item-description').value,
+          quantity: parseFloat(itemElement.querySelector('.item-quantity').value) || 0,
+          rate: parseFloat(itemElement.querySelector('.item-rate').value) || 0
+        };
+      }
+      return null;
+    }).filter(item => item !== null),
+    savedAt: Date.now()
+  };
+
+  // Check if data has changed (avoid saving identical drafts)
+  const dataString = JSON.stringify(draftData);
+  if (dataString === lastAutoSaveData) {
+    return; // No changes, skip save
+  }
+
+  // Check if form has meaningful data (at least client name or an item)
+  const hasData = draftData.clientName ||
+                  draftData.items.some(item => item.description || item.quantity || item.rate);
+
+  if (!hasData) {
+    return; // No meaningful data, skip save
+  }
+
+  // Save to storage
+  chrome.storage.local.set({ invoice_draft: draftData }, () => {
+    lastAutoSaveData = dataString;
+    showAutoSaveIndicator();
+  });
+}
+
+// Restore draft on load
+async function restoreDraft() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['invoice_draft'], (result) => {
+      const draft = result.invoice_draft;
+
+      if (!draft) {
+        resolve();
+        return;
+      }
+
+      // Check if draft is recent (within 7 days)
+      const draftAge = Date.now() - draft.savedAt;
+      const sevenDays = 7 * 24 * 60 * 60 * 1000;
+
+      if (draftAge > sevenDays) {
+        // Draft too old, clear it
+        chrome.storage.local.remove(['invoice_draft']);
+        resolve();
+        return;
+      }
+
+      // Restore client details
+      if (draft.clientName) document.getElementById('clientName').value = draft.clientName;
+      if (draft.clientGSTIN) document.getElementById('clientGSTIN').value = draft.clientGSTIN;
+      if (draft.clientState) document.getElementById('clientState').value = draft.clientState;
+      if (draft.clientAddress) document.getElementById('clientAddress').value = draft.clientAddress;
+      if (draft.clientEmail) document.getElementById('clientEmail').value = draft.clientEmail;
+
+      // Restore dates
+      if (draft.invoiceDate) document.getElementById('invoiceDate').value = draft.invoiceDate;
+      if (draft.dueDate) document.getElementById('dueDate').value = draft.dueDate;
+
+      // Restore items
+      if (draft.items && draft.items.length > 0) {
+        // Clear existing items
+        invoiceItems = [];
+        document.getElementById('itemsList').innerHTML = '';
+
+        // Add draft items
+        draft.items.forEach((item, index) => {
+          addItem();
+
+          // Fill in the item data
+          const itemElement = document.querySelector(`[data-item-id="${invoiceItems[invoiceItems.length - 1].id}"]`);
+          if (itemElement) {
+            itemElement.querySelector('.item-description').value = item.description || '';
+            itemElement.querySelector('.item-quantity').value = item.quantity || 1;
+            itemElement.querySelector('.item-rate').value = item.rate || 0;
+          }
+        });
+
+        // Recalculate totals
+        calculateTotals();
+      }
+
+      showToast('Draft restored from previous session', 'info');
+      resolve();
+    });
+  });
+}
+
+// Clear draft (after generating invoice)
+function clearDraft() {
+  chrome.storage.local.remove(['invoice_draft'], () => {
+    lastAutoSaveData = null;
+  });
+}
+
+// Show auto-save indicator briefly
+function showAutoSaveIndicator() {
+  const indicator = document.getElementById('autoSaveIndicator');
+  indicator.style.opacity = '1';
+
+  setTimeout(() => {
+    indicator.style.opacity = '0';
+  }, 2000); // Hide after 2 seconds
+}
+
+// ===== FORM VALIDATION =====
+
+// Validate GSTIN format
+function isValidGSTIN(gstin) {
+  if (!gstin) return true; // Optional field
+
+  // GSTIN format: 2 digits + 5 letters + 4 digits + 1 letter + 1 alphanumeric + Z + 1 alphanumeric
+  const gstinRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+  return gstinRegex.test(gstin);
+}
+
+// Show validation error
+function showError(groupId, message = null) {
+  const group = document.getElementById(groupId);
+  if (group) {
+    group.classList.add('error');
+    if (message) {
+      const errorSpan = group.querySelector('.error-message');
+      if (errorSpan) errorSpan.textContent = message;
+    }
+  }
+}
+
+// Hide validation error
+function hideError(groupId) {
+  const group = document.getElementById(groupId);
+  if (group) {
+    group.classList.remove('error');
+  }
+}
+
+// Clear all validation errors
+function clearAllErrors() {
+  document.querySelectorAll('.form-group.error').forEach(group => {
+    group.classList.remove('error');
+  });
+}
+
+// Real-time validation setup
+function setupRealTimeValidation() {
+  // Client Name validation
+  const clientName = document.getElementById('clientName');
+  clientName.addEventListener('blur', () => {
+    if (!clientName.value.trim()) {
+      showError('clientNameGroup');
+    } else {
+      hideError('clientNameGroup');
+    }
+  });
+
+  clientName.addEventListener('input', () => {
+    if (clientName.value.trim()) {
+      hideError('clientNameGroup');
+    }
+  });
+
+  // Client State validation
+  const clientState = document.getElementById('clientState');
+  clientState.addEventListener('change', () => {
+    if (!clientState.value) {
+      showError('clientStateGroup', 'Please select a state');
+    } else {
+      hideError('clientStateGroup');
+    }
+  });
+
+  // GSTIN validation
+  const clientGSTIN = document.getElementById('clientGSTIN');
+  clientGSTIN.addEventListener('blur', () => {
+    const value = clientGSTIN.value.trim();
+    if (value && !isValidGSTIN(value)) {
+      showError('clientGSTINGroup');
+    } else {
+      hideError('clientGSTINGroup');
+    }
+  });
+
+  clientGSTIN.addEventListener('input', () => {
+    const value = clientGSTIN.value.trim();
+    if (!value || isValidGSTIN(value)) {
+      hideError('clientGSTINGroup');
+    }
+  });
+}
+
+// ===== KEYBOARD SHORTCUTS =====
+
+function setupKeyboardShortcuts() {
+  document.addEventListener('keydown', (e) => {
+    // Check for Ctrl (Windows/Linux) or Cmd (Mac)
+    const isMod = e.ctrlKey || e.metaKey;
+
+    // Ctrl/Cmd + S: Save Draft
+    if (isMod && e.key === 's') {
+      e.preventDefault();
+
+      // Only if on main form
+      if (document.getElementById('mainForm').style.display !== 'none') {
+        saveDraft();
+      }
+    }
+
+    // Ctrl/Cmd + G: Generate PDF
+    if (isMod && e.key === 'g') {
+      e.preventDefault();
+
+      // Only if on main form
+      if (document.getElementById('mainForm').style.display !== 'none') {
+        generatePDF();
+      }
+    }
+
+    // Ctrl/Cmd + H: Open History
+    if (isMod && e.key === 'h') {
+      e.preventDefault();
+
+      // Only if on main form
+      if (document.getElementById('mainForm').style.display !== 'none') {
+        showHistory();
+      }
+    }
+
+    // Ctrl/Cmd + ,: Open Settings
+    if (isMod && e.key === ',') {
+      e.preventDefault();
+
+      // Only if on main form
+      if (document.getElementById('mainForm').style.display !== 'none') {
+        showSettings();
+      }
+    }
+
+    // Escape: Go back to main form
+    if (e.key === 'Escape') {
+      const settingsVisible = document.getElementById('settingsForm').style.display !== 'none';
+      const historyVisible = document.getElementById('historyView').style.display !== 'none';
+
+      if (settingsVisible || historyVisible) {
+        e.preventDefault();
+        showMain();
+      }
+    }
+
+    // Ctrl/Cmd + I: Add new item
+    if (isMod && e.key === 'i') {
+      e.preventDefault();
+
+      // Only if on main form
+      if (document.getElementById('mainForm').style.display !== 'none') {
+        addItem();
+        showToast('New item added', 'info');
+      }
+    }
+  });
 }
 
 // Set Default Dates
@@ -420,32 +860,69 @@ function collectInvoiceData() {
 
 // Validate Invoice Data
 function validateInvoiceData(data) {
+  // Clear previous errors
+  clearAllErrors();
+
+  let isValid = true;
+  const errors = [];
+
+  // Validate business details
   if (!data.yourDetails) {
-    showToast('Please set up your business details first', 'error');
+    showToast('⚠️ Please set up your business details in Settings first', 'error');
     return false;
   }
 
-  if (!data.clientName) {
-    showToast('Please enter client name', 'error');
-    return false;
+  // Validate client name
+  if (!data.clientName || !data.clientName.trim()) {
+    showError('clientNameGroup');
+    errors.push('Client name is required');
+    isValid = false;
   }
 
+  // Validate client state
   if (!data.clientState) {
-    showToast('Please select client state', 'error');
-    return false;
+    showError('clientStateGroup', 'Please select a state');
+    errors.push('Client state is required');
+    isValid = false;
   }
 
+  // Validate GSTIN format if provided
+  if (data.clientGSTIN && !isValidGSTIN(data.clientGSTIN)) {
+    showError('clientGSTINGroup');
+    errors.push('Invalid GSTIN format');
+    isValid = false;
+  }
+
+  // Validate items
   if (data.items.length === 0 || !data.items[0].description) {
-    showToast('Please add at least one item', 'error');
-    return false;
+    showToast('⚠️ Please add at least one item to the invoice', 'error');
+    errors.push('At least one item is required');
+    isValid = false;
   }
 
-  if (data.items.some(item => !item.description || item.quantity <= 0 || item.rate <= 0)) {
-    showToast('Please fill all item details', 'error');
-    return false;
+  // Validate item details
+  data.items.forEach((item, index) => {
+    if (!item.description || item.description.trim() === '') {
+      errors.push(`Item ${index + 1}: Description is required`);
+      isValid = false;
+    }
+    if (item.quantity <= 0) {
+      errors.push(`Item ${index + 1}: Quantity must be greater than 0`);
+      isValid = false;
+    }
+    if (item.rate <= 0) {
+      errors.push(`Item ${index + 1}: Rate must be greater than 0`);
+      isValid = false;
+    }
+  });
+
+  // Show consolidated error message if validation failed
+  if (!isValid && errors.length > 0) {
+    const errorMessage = errors.slice(0, 3).join(', ');
+    showToast(`⚠️ ${errorMessage}${errors.length > 3 ? ', and more...' : ''}`, 'error');
   }
 
-  return true;
+  return isValid;
 }
 
 // Check Usage (Free Tier: 5 invoices/month)
@@ -496,18 +973,42 @@ function incrementUsage() {
 
 // Save Draft
 function saveDraft() {
+  // Trigger manual save using auto-save logic
+  autoSaveDraft();
+  showToast('Draft saved manually!', 'success');
+}
+
+// Preview PDF - opens in browser without downloading
+function previewPDF() {
   const data = collectInvoiceData();
 
   if (!validateInvoiceData(data)) return;
 
-  chrome.storage.local.set({
-    [`draft_${Date.now()}`]: data
-  }, () => {
-    showToast('Draft saved successfully!', 'success');
-  });
+  try {
+    // Generate PDF using jsPDF helper
+    const doc = createPDFFromData(data);
+
+    // Create blob and open in new window (no download)
+    const pdfBlob = doc.output('blob');
+    const pdfUrl = URL.createObjectURL(pdfBlob);
+
+    // Open in new window with proper filename
+    const previewWindow = window.open(pdfUrl, '_blank');
+
+    if (previewWindow) {
+      // Set the window title
+      previewWindow.document.title = `Invoice ${data.invoiceNumber} - Preview`;
+      showToast('Preview opened in new tab', 'info');
+    } else {
+      showToast('Please allow pop-ups to preview invoices', 'error');
+    }
+  } catch (error) {
+    console.error('PDF preview error:', error);
+    showToast('Error previewing PDF', 'error');
+  }
 }
 
-// Generate PDF (Simple HTML version for now - will integrate jsPDF later)
+// Generate PDF using jsPDF
 async function generatePDF() {
   const data = collectInvoiceData();
 
@@ -522,35 +1023,39 @@ async function generatePDF() {
 
   showToast('Generating PDF...', 'info');
 
-  // For MVP, we'll create a printable HTML invoice
-  // In Week 3, we'll add proper jsPDF integration
-  const invoiceHTML = generateInvoiceHTML(data);
+  try {
+    // Generate PDF using jsPDF helper
+    const doc = createPDFFromData(data);
 
-  // Open in new window for printing
-  const printWindow = window.open('', '', 'width=800,height=600');
-  printWindow.document.write(invoiceHTML);
-  printWindow.document.close();
-  printWindow.focus();
+    // Save the PDF
+    doc.save(`Invoice-${data.invoiceNumber}.pdf`);
 
-  setTimeout(() => {
-    printWindow.print();
-  }, 250);
+    // Save invoice to history
+    chrome.storage.local.set({
+      [`invoice_${data.invoiceNumber}_${Date.now()}`]: data
+    });
 
-  // Save invoice to history
-  chrome.storage.local.set({
-    [`invoice_${data.invoiceNumber}_${Date.now()}`]: data
-  });
+    // Increment usage and invoice number
+    incrementUsage();
+    chrome.storage.sync.set({ lastInvoiceNumber: currentInvoiceNumber });
 
-  // Increment usage and invoice number
-  incrementUsage();
-  chrome.storage.sync.set({ lastInvoiceNumber: currentInvoiceNumber });
+    showToast('Invoice PDF generated successfully!', 'success');
 
-  showToast('Invoice generated! Use browser print to save as PDF.', 'success');
+    // Clear draft after successful generation
+    clearDraft();
 
-  // Increment invoice number for next invoice
-  currentInvoiceNumber++;
-  const prefix = businessSettings?.invoicePrefix || 'INV';
-  document.getElementById('invoiceNumber').value = `${prefix}-${String(currentInvoiceNumber).padStart(3, '0')}`;
+    // Increment invoice number for next invoice
+    currentInvoiceNumber++;
+    const prefix = businessSettings?.invoicePrefix || 'INV';
+    document.getElementById('invoiceNumber').value = `${prefix}-${String(currentInvoiceNumber).padStart(3, '0')}`;
+
+    // Reset form for next invoice (optional - you can comment this out if you want to keep the data)
+    // clearFormForNextInvoice();
+
+  } catch (error) {
+    console.error('PDF generation error:', error);
+    showToast('Error generating PDF. Please try again.', 'error');
+  }
 }
 
 // Generate Invoice HTML (for printing)
@@ -727,18 +1232,190 @@ function loadInvoiceHistory() {
   });
 }
 
+// Helper function to create PDF from invoice data using jsPDF
+function createPDFFromData(data) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+
+  const isIntraState = data.yourDetails.state === data.clientState;
+
+  // Header with gradient-like color
+  doc.setFillColor(102, 126, 234);
+  doc.rect(0, 0, 210, 35, 'F');
+
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(24);
+  doc.setFont('helvetica', 'bold');
+  doc.text('TAX INVOICE', 105, 15, { align: 'center' });
+
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  doc.text('Generated by BillStack', 105, 25, { align: 'center' });
+
+  // Reset text color
+  doc.setTextColor(0, 0, 0);
+
+  // Invoice metadata (top right)
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  let y = 45;
+  doc.text(`Invoice #: ${data.invoiceNumber}`, 140, y);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Date: ${new Date(data.date).toLocaleDateString('en-IN')}`, 140, y + 6);
+  doc.text(`Due: ${new Date(data.dueDate).toLocaleDateString('en-IN')}`, 140, y + 12);
+
+  // From Details
+  y = 45;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.text('FROM:', 15, y);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.text(data.yourDetails.name, 15, y + 7);
+  doc.setFontSize(9);
+  doc.text(`GSTIN: ${data.yourDetails.gstin}`, 15, y + 13);
+
+  // Split address into lines
+  const fromAddress = doc.splitTextToSize(data.yourDetails.address, 80);
+  doc.text(fromAddress, 15, y + 19);
+
+  let fromY = y + 19 + (fromAddress.length * 5);
+
+  if (data.yourDetails.email) {
+    doc.text(data.yourDetails.email, 15, fromY + 5);
+    fromY += 5;
+  }
+  if (data.yourDetails.phone) {
+    doc.text(data.yourDetails.phone, 15, fromY + 5);
+  }
+
+  // Bill To Details - position below FROM section with enough space
+  y = Math.max(95, fromY + 15);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.text('BILL TO:', 15, y);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.text(data.clientName, 15, y + 7);
+  doc.setFontSize(9);
+
+  if (data.clientGSTIN) {
+    doc.text(`GSTIN: ${data.clientGSTIN}`, 15, y + 13);
+  }
+
+  let clientY = y + (data.clientGSTIN ? 19 : 13);
+
+  if (data.clientAddress) {
+    const toAddress = doc.splitTextToSize(data.clientAddress, 80);
+    doc.text(toAddress, 15, clientY);
+    clientY += toAddress.length * 5;
+  }
+
+  if (data.clientEmail) {
+    doc.text(data.clientEmail, 15, clientY + 5);
+  }
+
+  // Items Table - position with proper spacing
+  y = Math.max(135, clientY + 15);
+
+  // Table headers
+  doc.setFillColor(240, 240, 240);
+  doc.rect(15, y, 180, 8, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.text('Description', 17, y + 5);
+  doc.text('Qty', 125, y + 5);
+  doc.text('Rate', 150, y + 5);
+  doc.text('Amount', 185, y + 5, { align: 'right' });
+
+  // Table items
+  doc.setFont('helvetica', 'normal');
+  y += 8;
+
+  data.items.forEach((item) => {
+    y += 7;
+    const description = doc.splitTextToSize(item.description, 105);
+    doc.text(description, 17, y);
+    doc.text(String(item.quantity), 125, y);
+    doc.text(`Rs ${item.rate.toFixed(2)}`, 145, y);
+    doc.text(`Rs ${(item.quantity * item.rate).toFixed(2)}`, 193, y, { align: 'right' });
+
+    if (description.length > 1) {
+      y += (description.length - 1) * 5;
+    }
+  });
+
+  // Line above totals
+  y += 10;
+  doc.setDrawColor(200, 200, 200);
+  doc.line(15, y, 195, y);
+
+  // Totals section
+  y += 8;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+
+  doc.text('Subtotal:', 145, y);
+  doc.text(`Rs ${data.subtotal.toFixed(2)}`, 193, y, { align: 'right' });
+
+  if (isIntraState) {
+    y += 6;
+    doc.setFontSize(9);
+    doc.text('CGST @ 9%:', 145, y);
+    doc.text(`Rs ${data.cgst.toFixed(2)}`, 193, y, { align: 'right' });
+
+    y += 5;
+    doc.text('SGST @ 9%:', 145, y);
+    doc.text(`Rs ${data.sgst.toFixed(2)}`, 193, y, { align: 'right' });
+  } else {
+    y += 6;
+    doc.setFontSize(9);
+    doc.text('IGST @ 18%:', 145, y);
+    doc.text(`Rs ${data.igst.toFixed(2)}`, 193, y, { align: 'right' });
+  }
+
+  // Total line
+  y += 7;
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.5);
+  doc.line(145, y, 195, y);
+
+  y += 6;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.text('TOTAL:', 145, y);
+  doc.text(`Rs ${data.total.toFixed(2)}`, 193, y, { align: 'right' });
+
+  // Amount in words
+  y += 10;
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(9);
+  const amountWords = doc.splitTextToSize(`Amount in words: ${data.totalInWords} Rupees Only`, 180);
+  doc.text(amountWords, 15, y);
+
+  // Footer
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(100, 100, 100);
+  doc.text('This is a computer-generated invoice and does not require a signature.', 105, 280, { align: 'center' });
+  doc.text('Generated using BillStack - GST Invoice Generator', 105, 285, { align: 'center' });
+
+  return doc;
+}
+
 // Regenerate Invoice from History
 function regenerateInvoice(key) {
   chrome.storage.local.get([key], (result) => {
     const data = result[key];
     if (data) {
-      const invoiceHTML = generateInvoiceHTML(data);
-      const printWindow = window.open('', '', 'width=800,height=600');
-      printWindow.document.write(invoiceHTML);
-      printWindow.document.close();
-      printWindow.focus();
-      setTimeout(() => printWindow.print(), 250);
-      showToast('Invoice regenerated!', 'success');
+      try {
+        const doc = createPDFFromData(data);
+        doc.save(`Invoice-${data.invoiceNumber}.pdf`);
+        showToast('Invoice PDF regenerated!', 'success');
+      } catch (error) {
+        console.error('PDF regeneration error:', error);
+        showToast('Error regenerating PDF', 'error');
+      }
     }
   });
 }
