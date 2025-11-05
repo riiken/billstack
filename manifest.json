@@ -11,6 +11,9 @@
   "permissions": [
     "storage"
   ],
+  "host_permissions": [
+    "https://www.google-analytics.com/*"
+  ],
   "action": {
     "default_popup": "src/popup/popup.html",
     "default_icon": {

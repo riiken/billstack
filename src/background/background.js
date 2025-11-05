@@ -1,5 +1,8 @@
 // Background Service Worker for GST Invoice Generator
 
+// Import analytics
+importScripts('../utils/analytics.js');
+
 // Listen for extension installation
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === 'install') {
@@ -17,6 +20,11 @@ chrome.runtime.onInstalled.addListener((details) => {
       },
       isPro: false
     });
+
+    // Track installation
+    if (typeof analytics !== 'undefined') {
+      analytics.trackInstall();
+    }
 
     // Open welcome/onboarding page (optional)
     // chrome.tabs.create({ url: 'welcome.html' });

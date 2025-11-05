@@ -4,53 +4,80 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>BillStack - GST Invoice Generator</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body class="loading">
   <div class="container">
     <!-- Header -->
     <header class="header">
-      <h1>📊 BillStack</h1>
+      <h1><i class="fas fa-file-invoice"></i> BillStack</h1>
       <div class="header-actions">
-        <button id="settingsBtn" class="icon-btn" title="Settings">⚙️</button>
-        <button id="historyBtn" class="icon-btn" title="History">📋</button>
+        <button id="historyBtn" class="nav-btn tooltip" data-tooltip="View invoice history">
+          <i class="fas fa-history"></i>
+        </button>
+        <button id="settingsBtn" class="nav-btn tooltip" data-tooltip="Settings & business details">
+          <i class="fas fa-cog"></i>
+        </button>
       </div>
     </header>
 
     <!-- Main Form -->
     <div id="mainForm" class="main-content">
       <!-- Invoice Details -->
-      <section class="section">
-        <h2>Invoice Details</h2>
-        <div class="form-row">
-          <div class="form-group">
-            <label for="invoiceNumber">Invoice Number</label>
-            <input type="text" id="invoiceNumber" value="INV-001" required>
+      <section class="section accordion-section">
+        <h2 class="accordion-header">
+          Invoice Details
+          <span class="accordion-icon">▼</span>
+        </h2>
+        <div class="accordion-content">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="invoiceNumber">Invoice Number</label>
+              <input type="text" id="invoiceNumber" value="INV-001" required>
+            </div>
+            <div class="form-group">
+              <label for="invoiceDate">Date</label>
+              <input type="date" id="invoiceDate" required>
+            </div>
           </div>
           <div class="form-group">
-            <label for="invoiceDate">Date</label>
-            <input type="date" id="invoiceDate" required>
+            <label for="dueDate">Due Date</label>
+            <input type="date" id="dueDate" required>
           </div>
-        </div>
-        <div class="form-group">
-          <label for="dueDate">Due Date</label>
-          <input type="date" id="dueDate" required>
+          <div class="form-group">
+            <label for="paymentStatus">Payment Status <span class="pro-badge-small">PRO</span></label>
+            <select id="paymentStatus" disabled>
+              <option value="unpaid" selected>Unpaid</option>
+              <option value="paid">Paid</option>
+              <option value="partial">Partially Paid</option>
+              <option value="overdue">Overdue</option>
+            </select>
+            <small>Track payment status - Upgrade to Pro</small>
+          </div>
         </div>
       </section>
 
       <!-- Your Business Details -->
-      <section class="section">
-        <h2>Your Business Details</h2>
-        <div class="info-box" id="businessInfo">
-          <p class="setup-prompt">⚠️ Please set up your business details in Settings first</p>
+      <section class="section accordion-section">
+        <h2 class="accordion-header">
+          Your Business Details
+          <span class="accordion-icon">▼</span>
+        </h2>
+        <div class="accordion-content">
+          <div class="info-box" id="businessInfo">
+            <p class="setup-prompt">⚠️ Please set up your business details in Settings first</p>
+          </div>
         </div>
       </section>
 
       <!-- Client Details -->
-      <section class="section">
-        <div class="section-header">
-          <h2>Client Details</h2>
-        </div>
+      <section class="section accordion-section">
+        <h2 class="accordion-header">
+          Client Details
+          <span class="accordion-icon">▼</span>
+        </h2>
+        <div class="accordion-content">
 
         <!-- Client Templates -->
         <div class="form-group" style="background: #f3f4f6; padding: 12px; border-radius: 6px; margin-bottom: 16px;">
@@ -59,8 +86,12 @@
             <select id="loadClientTemplate" style="flex: 1;">
               <option value="">-- Select a client --</option>
             </select>
-            <button id="saveClientTemplateBtn" class="btn-secondary" style="white-space: nowrap; padding: 8px 12px;" title="Save current client as template">💾 Save</button>
-            <button id="deleteClientTemplateBtn" class="btn-secondary" style="white-space: nowrap; padding: 8px 12px; background: #fee2e2; color: #dc2626; display: none;" title="Delete selected client template">🗑️</button>
+            <button id="saveClientTemplateBtn" class="btn-icon-action tooltip" data-tooltip="Save current client">
+              <i class="fas fa-save"></i>
+            </button>
+            <button id="deleteClientTemplateBtn" class="btn-icon-action btn-icon-danger tooltip" data-tooltip="Delete selected client" style="display: none;">
+              <i class="fas fa-trash-alt"></i>
+            </button>
           </div>
           <small style="color: #6b7280; display: block; margin-top: 6px;">Save frequent clients for quick reuse</small>
         </div>
@@ -127,22 +158,35 @@
           <label for="clientEmail">Client Email</label>
           <input type="email" id="clientEmail" placeholder="client@example.com">
         </div>
+        </div>
       </section>
 
       <!-- Invoice Items -->
-      <section class="section">
-        <div class="section-header">
-          <h2>Invoice Items</h2>
-          <button id="addItemBtn" class="btn-secondary">+ Add Item</button>
-        </div>
-        <div id="itemsList">
-          <!-- Items will be added here dynamically -->
+      <section class="section accordion-section">
+        <h2 class="accordion-header">
+          Invoice Items
+          <span class="accordion-icon">▼</span>
+        </h2>
+        <div class="accordion-content">
+          <div style="display: flex; justify-content: flex-end; margin-bottom: 12px;">
+            <button id="addItemBtn" class="btn-add-item tooltip" data-tooltip="Add new invoice item">
+              <i class="fas fa-plus"></i> Add Item
+            </button>
+          </div>
+          <div id="itemsList">
+            <!-- Items will be added here dynamically -->
+          </div>
         </div>
       </section>
 
       <!-- Totals -->
-      <section class="section">
-        <div class="totals-box">
+      <section class="section accordion-section">
+        <h2 class="accordion-header">
+          Totals
+          <span class="accordion-icon">▼</span>
+        </h2>
+        <div class="accordion-content">
+          <div class="totals-box">
           <div class="total-row">
             <span>Subtotal:</span>
             <span id="subtotal">₹0.00</span>
@@ -164,6 +208,7 @@
             <span id="total">₹0.00</span>
           </div>
           <div class="amount-words" id="amountWords"></div>
+        </div>
         </div>
       </section>
 
@@ -214,7 +259,9 @@
     <!-- Settings View (Hidden by default) -->
     <div id="settingsView" class="settings-view" style="display: none;">
       <div class="settings-header">
-        <button id="backBtn" class="icon-btn">← Back</button>
+        <button id="backBtn" class="back-btn tooltip" data-tooltip="Back to invoice form">
+          <i class="fas fa-arrow-left"></i> Back
+        </button>
         <h2>Business Settings</h2>
       </div>
 
@@ -222,6 +269,25 @@
         <div class="form-group">
           <label for="businessName">Business/Your Name *</label>
           <input type="text" id="businessName" required>
+        </div>
+
+        <div class="form-group">
+          <label for="businessLogo">Business Logo (Optional)</label>
+          <div class="logo-upload-container">
+            <div class="logo-preview" id="logoPreview">
+              <div class="logo-placeholder">
+                <span class="logo-icon">🏢</span>
+                <span class="logo-text">No logo uploaded</span>
+              </div>
+              <img id="logoImage" style="display: none;" alt="Business Logo">
+            </div>
+            <div class="logo-actions">
+              <input type="file" id="businessLogo" accept="image/png,image/jpeg,image/jpg" style="display: none;">
+              <button type="button" id="uploadLogoBtn" class="btn-secondary">Upload Logo</button>
+              <button type="button" id="removeLogoBtn" class="btn-secondary" style="display: none;">Remove</button>
+            </div>
+          </div>
+          <small>Recommended: PNG or JPG, max 500KB, square format (e.g. 200x200px)</small>
         </div>
 
         <div class="form-group">
@@ -304,6 +370,45 @@
           </select>
         </div>
 
+        <div class="form-group">
+          <label for="invoiceTemplate">Invoice Template <span class="pro-badge-small">PRO</span></label>
+          <select id="invoiceTemplate">
+            <option value="modern" selected>Modern (Purple Gradient)</option>
+            <option value="classic" disabled>Classic (Traditional) - Pro Only</option>
+            <option value="minimal" disabled>Minimal (Clean) - Pro Only</option>
+          </select>
+          <small>Upgrade to Pro to unlock all templates</small>
+        </div>
+
+        <hr style="margin: 24px 0; border: none; border-top: 2px solid #e2e8f0;">
+
+        <h3 style="font-size: 15px; font-weight: 700; margin-bottom: 16px; color: #2d3748;">Saved Items Library</h3>
+        <p style="font-size: 12px; color: #718096; margin-bottom: 12px;">Save your frequently used products/services for quick invoicing</p>
+
+        <div id="savedItemsList" style="margin-bottom: 16px;">
+          <p class="empty-state" id="noSavedItems">No saved items yet. Add your first item below.</p>
+        </div>
+
+        <div class="saved-item-form" style="background: #f7fafc; padding: 16px; border-radius: 10px; border: 2px solid #e2e8f0;">
+          <div class="form-row">
+            <div class="form-group" style="margin-bottom: 12px;">
+              <label for="newItemName">Item Name *</label>
+              <input type="text" id="newItemName" placeholder="e.g., Web Development">
+            </div>
+            <div class="form-group" style="margin-bottom: 12px;">
+              <label for="newItemRate">Rate (₹) *</label>
+              <input type="number" id="newItemRate" placeholder="5000" step="0.01">
+            </div>
+          </div>
+          <div class="form-group" style="margin-bottom: 12px;">
+            <label for="newItemDescription">Description</label>
+            <textarea id="newItemDescription" rows="2" placeholder="Full description for invoice"></textarea>
+          </div>
+          <button type="button" id="addSavedItemBtn" class="btn-secondary" style="width: 100%;">+ Add to Library</button>
+        </div>
+
+        <hr style="margin: 24px 0; border: none; border-top: 2px solid #e2e8f0;">
+
         <button id="saveSettingsBtn" class="btn-primary">Save Settings</button>
       </div>
     </div>
@@ -311,12 +416,272 @@
     <!-- History View (Hidden by default) -->
     <div id="historyView" class="history-view" style="display: none;">
       <div class="settings-header">
-        <button id="backFromHistoryBtn" class="icon-btn">← Back</button>
+        <button id="backFromHistoryBtn" class="back-btn tooltip" data-tooltip="Back to invoice form">
+          <i class="fas fa-arrow-left"></i> Back
+        </button>
         <h2>Invoice History</h2>
+        <button id="analyticsBtn" class="btn-secondary" style="margin-left: auto; padding: 6px 12px; font-size: 12px;">
+          <i class="fas fa-chart-line"></i> Analytics <span class="pro-badge-small">PRO</span>
+        </button>
       </div>
 
       <div id="historyList" class="history-list">
         <p class="empty-state">No invoices generated yet</p>
+      </div>
+    </div>
+
+    <!-- Analytics Dashboard (Hidden by default, Pro only) -->
+    <div id="analyticsView" class="analytics-view" style="display: none;">
+      <div class="settings-header">
+        <button id="backFromAnalyticsBtn" class="back-btn tooltip" data-tooltip="Back to invoice form">
+          <i class="fas fa-arrow-left"></i> Back
+        </button>
+        <h2>Analytics Dashboard</h2>
+      </div>
+
+      <div id="analyticsContent" class="analytics-content">
+        <!-- Pro users see analytics -->
+        <div id="analyticsData">
+          <div class="analytics-grid">
+            <div class="analytics-card">
+              <div class="analytics-label">Total Revenue</div>
+              <div class="analytics-value" id="totalRevenue">₹0</div>
+              <div class="analytics-change">This month</div>
+            </div>
+
+            <div class="analytics-card">
+              <div class="analytics-label">Invoices Generated</div>
+              <div class="analytics-value" id="totalInvoices">0</div>
+              <div class="analytics-change">All time</div>
+            </div>
+
+            <div class="analytics-card">
+              <div class="analytics-label">Unpaid Amount</div>
+              <div class="analytics-value unpaid" id="unpaidAmount">₹0</div>
+              <div class="analytics-change">Outstanding</div>
+            </div>
+
+            <div class="analytics-card">
+              <div class="analytics-label">Top Client</div>
+              <div class="analytics-value" id="topClient" style="font-size: 16px;">-</div>
+              <div class="analytics-change">By revenue</div>
+            </div>
+          </div>
+
+          <div class="analytics-section">
+            <h3>Monthly Breakdown</h3>
+            <div id="monthlyBreakdown" class="monthly-breakdown">
+              <p class="empty-state">No data available yet</p>
+            </div>
+          </div>
+
+          <div class="analytics-section">
+            <h3>Payment Status</h3>
+            <div id="paymentStatusChart" class="payment-status-chart">
+              <div class="payment-bar">
+                <span class="payment-label">Paid</span>
+                <div class="payment-progress">
+                  <div class="payment-fill paid" id="paidBar" style="width: 0%"></div>
+                </div>
+                <span class="payment-count" id="paidCount">0</span>
+              </div>
+              <div class="payment-bar">
+                <span class="payment-label">Unpaid</span>
+                <div class="payment-progress">
+                  <div class="payment-fill unpaid" id="unpaidBar" style="width: 0%"></div>
+                </div>
+                <span class="payment-count" id="unpaidCount">0</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Free users see upgrade prompt -->
+        <div id="analyticsUpgrade" style="display: none;">
+          <div class="analytics-empty">
+            <div style="font-size: 48px; margin-bottom: 16px;">📊</div>
+            <h3>Analytics Dashboard - Pro Feature</h3>
+            <p>Track your revenue, monitor payment status, and get insights into your invoicing.</p>
+            <ul style="text-align: left; max-width: 300px; margin: 20px auto;">
+              <li>Total revenue tracking</li>
+              <li>Monthly breakdowns</li>
+              <li>Payment status overview</li>
+              <li>Top clients by revenue</li>
+              <li>Invoice trends</li>
+            </ul>
+            <button class="btn-primary" id="analyticsUpgradeBtn" style="margin-top: 16px;">Upgrade to Pro</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Upgrade Modal (Hidden by default) -->
+    <div id="upgradeModal" class="modal upgrade-modal" style="display: none;">
+      <div class="modal-overlay"></div>
+      <div class="modal-content">
+        <button class="modal-close" id="closeUpgradeModal">×</button>
+
+        <div class="upgrade-modal-header">
+          <h2>🚀 Unlock BillStack Pro</h2>
+          <p class="subtitle">Generate unlimited invoices & grow your business faster</p>
+        </div>
+
+        <!-- Feature Comparison Table -->
+        <div class="feature-comparison">
+          <div class="feature-comparison-header">
+            <div>Feature</div>
+            <div>Free</div>
+            <div>Pro</div>
+          </div>
+
+          <div class="feature-comparison-row">
+            <div class="feature-name">Monthly Invoices</div>
+            <div class="feature-value limited">5/month</div>
+            <div class="feature-value available">∞</div>
+          </div>
+
+          <div class="feature-comparison-row">
+            <div class="feature-name">PDF Templates</div>
+            <div class="feature-value limited">1 Design</div>
+            <div class="feature-value available">3 Designs</div>
+          </div>
+
+          <div class="feature-comparison-row">
+            <div class="feature-name">Client Templates</div>
+            <div class="feature-value limited">5 Max</div>
+            <div class="feature-value available">∞</div>
+          </div>
+
+          <div class="feature-comparison-row">
+            <div class="feature-name">Saved Items Library</div>
+            <div class="feature-value limited">10 Max</div>
+            <div class="feature-value available">∞</div>
+          </div>
+
+          <div class="feature-comparison-row">
+            <div class="feature-name">Analytics Dashboard</div>
+            <div class="feature-value unavailable">✗</div>
+            <div class="feature-value available">✓</div>
+          </div>
+
+          <div class="feature-comparison-row">
+            <div class="feature-name">Payment Tracking</div>
+            <div class="feature-value unavailable">✗</div>
+            <div class="feature-value available">✓</div>
+          </div>
+
+          <div class="feature-comparison-row">
+            <div class="feature-name">Email Invoices</div>
+            <div class="feature-value unavailable">✗</div>
+            <div class="feature-value available">✓</div>
+          </div>
+
+          <div class="feature-comparison-row">
+            <div class="feature-name">Excel/CSV Export</div>
+            <div class="feature-value unavailable">✗</div>
+            <div class="feature-value available">✓</div>
+          </div>
+
+          <div class="feature-comparison-row">
+            <div class="feature-name">Cloud Sync</div>
+            <div class="feature-value unavailable">✗</div>
+            <div class="feature-value available">✓</div>
+          </div>
+
+          <div class="feature-comparison-row">
+            <div class="feature-name">Priority Support</div>
+            <div class="feature-value unavailable">✗</div>
+            <div class="feature-value available">✓</div>
+          </div>
+        </div>
+
+        <!-- Social Proof -->
+        <div class="social-proof">
+          <div class="social-proof-stats">
+            <div class="social-proof-stat">
+              <span class="number">2,500+</span>
+              <span class="label">Active Users</span>
+            </div>
+            <div class="social-proof-stat">
+              <span class="number">50,000+</span>
+              <span class="label">Invoices Generated</span>
+            </div>
+            <div class="social-proof-stat">
+              <span class="number">4.8★</span>
+              <span class="label">User Rating</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Pricing Plans -->
+        <div class="pricing-plans">
+          <div class="plan-card">
+            <h4>Monthly</h4>
+            <p class="plan-price">₹299<span>/mo</span></p>
+            <button class="btn-primary" id="upgradeMonthlyBtn">Choose Monthly</button>
+            <p style="font-size: 11px; color: #6b7280; margin-top: 8px;">Cancel anytime</p>
+          </div>
+          <div class="plan-card plan-popular">
+            <div class="plan-badge">Save ₹589/year</div>
+            <h4>Annual</h4>
+            <p class="plan-price">₹2,999<span>/year</span></p>
+            <p class="plan-saving">Just ₹250/month</p>
+            <button class="btn-primary" id="upgradeAnnualBtn">Choose Annual</button>
+            <p style="font-size: 11px; color: #10b981; margin-top: 8px; font-weight: 600;">🎉 Best Value</p>
+          </div>
+        </div>
+
+        <!-- Money Back Guarantee -->
+        <div class="money-back-guarantee">
+          <i class="fas fa-shield-alt"></i>
+          <span>30-Day Money Back Guarantee - No Questions Asked</span>
+        </div>
+
+        <a href="#" class="modal-skip" id="skipUpgrade">Maybe later</a>
+      </div>
+    </div>
+
+    <!-- Onboarding Modal (First-time users) -->
+    <div id="onboardingModal" class="modal" style="display: none;">
+      <div class="modal-overlay"></div>
+      <div class="modal-content onboarding-content">
+        <div class="onboarding-step" id="onboardingStep1">
+          <h2>👋 Welcome to BillStack!</h2>
+          <p>Generate professional GST-compliant invoices in 30 seconds.</p>
+          <div class="onboarding-image">📊</div>
+          <p class="onboarding-feature">Perfect for Indian freelancers, creators, and consultants.</p>
+          <button class="btn-primary" id="onboardingNextBtn">Get Started</button>
+        </div>
+
+        <div class="onboarding-step" id="onboardingStep2" style="display: none;">
+          <h2>⚙️ Set Up Your Business Details</h2>
+          <p>First, let's set up your business information. This will be used on all your invoices.</p>
+          <div class="onboarding-image">🏢</div>
+          <ul class="onboarding-checklist">
+            <li>Business name and GSTIN</li>
+            <li>Address and contact info</li>
+            <li>Invoice preferences</li>
+          </ul>
+          <button class="btn-primary" id="onboardingSetupBtn">Set Up Now</button>
+          <button class="btn-secondary" id="onboardingSkipBtn" style="margin-top: 8px;">Skip for Now</button>
+        </div>
+
+        <div class="onboarding-step" id="onboardingStep3" style="display: none;">
+          <h2>🎉 You're All Set!</h2>
+          <p>Start creating your first invoice now.</p>
+          <div class="onboarding-image">✨</div>
+          <div class="onboarding-freebies">
+            <h3>Free Plan Includes:</h3>
+            <ul>
+              <li>✅ 5 invoices per month</li>
+              <li>✅ Professional PDF export</li>
+              <li>✅ Invoice history</li>
+              <li>✅ Client templates</li>
+            </ul>
+            <p class="onboarding-pro-hint">Need more? Upgrade to Pro for unlimited invoices and advanced features!</p>
+          </div>
+          <button class="btn-primary" id="onboardingFinishBtn">Start Creating Invoices</button>
+        </div>
       </div>
     </div>
 
@@ -326,6 +691,9 @@
 
   <!-- Libraries -->
   <script src="../../libs/jspdf.umd.min.js"></script>
+
+  <!-- Analytics -->
+  <script src="../utils/analytics.js"></script>
 
   <!-- Main Script -->
   <script src="popup.js"></script>

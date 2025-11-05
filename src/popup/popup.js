@@ -36,6 +36,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadLastInvoiceNumber();
     await checkUsage();
     await loadClientTemplatesDropdown();
+    await loadBusinessLogo(); // Fix: Load logo on initialization
 
     // Setup event listeners
     initializeEventListeners();
@@ -63,6 +64,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Start auto-save timer
     startAutoSave();
+
+    // Track page view
+    if (typeof analytics !== 'undefined') {
+      analytics.trackPageView('main_form', 'Invoice Generator');
+    }
   } catch (error) {
     console.error('Initialization error:', error);
     isInitializing = false;
@@ -78,9 +84,21 @@ function initializeEventListeners() {
   document.getElementById('historyBtn').addEventListener('click', showHistory);
   document.getElementById('backBtn').addEventListener('click', showMainForm);
   document.getElementById('backFromHistoryBtn').addEventListener('click', showMainForm);
+  document.getElementById('analyticsBtn').addEventListener('click', showAnalytics);
+  document.getElementById('backFromAnalyticsBtn').addEventListener('click', showHistory);
 
   // Settings
   document.getElementById('saveSettingsBtn').addEventListener('click', saveSettings);
+
+  // Logo upload
+  document.getElementById('uploadLogoBtn').addEventListener('click', () => {
+    document.getElementById('businessLogo').click();
+  });
+  document.getElementById('businessLogo').addEventListener('change', handleLogoUpload);
+  document.getElementById('removeLogoBtn').addEventListener('click', removeLogo);
+
+  // Saved Items Library
+  document.getElementById('addSavedItemBtn').addEventListener('click', addSavedItem);
 
   // Invoice form
   document.getElementById('addItemBtn').addEventListener('click', addItem);
@@ -108,26 +126,161 @@ function initializeEventListeners() {
 
   // Upgrade button
   document.getElementById('upgradeBtn').addEventListener('click', showUpgradeModal);
+
+  // Setup accordions
+  setupAccordions();
+}
+
+// Setup Accordion functionality
+function setupAccordions() {
+  const accordionHeaders = document.querySelectorAll('.accordion-header');
+
+  accordionHeaders.forEach(header => {
+    header.addEventListener('click', () => {
+      const section = header.closest('.accordion-section');
+      section.classList.toggle('collapsed');
+
+      // Optional: Close other accordions when opening one (uncomment if you want this behavior)
+      // accordionHeaders.forEach(otherHeader => {
+      //   if (otherHeader !== header) {
+      //     const otherSection = otherHeader.closest('.accordion-section');
+      //     otherSection.classList.add('collapsed');
+      //   }
+      // });
+    });
+  });
 }
 
 // Navigation Functions
 function showSettings() {
   document.getElementById('mainForm').style.display = 'none';
   document.getElementById('historyView').style.display = 'none';
+  document.getElementById('analyticsView').style.display = 'none';
   document.getElementById('settingsView').style.display = 'block';
+
+  // Update active nav button
+  document.getElementById('historyBtn').classList.remove('active');
+  document.getElementById('settingsBtn').classList.add('active');
+
+  loadBusinessLogo(); // Load logo preview
+  loadSavedItems(); // Load saved items library
 }
 
 function showHistory() {
   document.getElementById('mainForm').style.display = 'none';
   document.getElementById('settingsView').style.display = 'none';
   document.getElementById('historyView').style.display = 'block';
+  document.getElementById('analyticsView').style.display = 'none';
+
+  // Update active nav button
+  document.getElementById('settingsBtn').classList.remove('active');
+  document.getElementById('historyBtn').classList.add('active');
+
   loadInvoiceHistory();
+}
+
+async function showAnalytics() {
+  // Check if user is Pro
+  const { isPro } = await new Promise((resolve) => {
+    chrome.storage.local.get(['isPro'], (result) => {
+      resolve({ isPro: result.isPro || false });
+    });
+  });
+
+  document.getElementById('mainForm').style.display = 'none';
+  document.getElementById('settingsView').style.display = 'none';
+  document.getElementById('historyView').style.display = 'none';
+  document.getElementById('analyticsView').style.display = 'block';
+
+  if (isPro) {
+    document.getElementById('analyticsData').style.display = 'block';
+    document.getElementById('analyticsUpgrade').style.display = 'none';
+    calculateAnalytics();
+  } else {
+    document.getElementById('analyticsData').style.display = 'none';
+    document.getElementById('analyticsUpgrade').style.display = 'block';
+  }
+}
+
+function calculateAnalytics() {
+  chrome.storage.local.get(null, (items) => {
+    const invoices = Object.keys(items)
+      .filter(key => key.startsWith('invoice_'))
+      .map(key => items[key]);
+
+    if (invoices.length === 0) {
+      return;
+    }
+
+    // Calculate total revenue
+    const totalRevenue = invoices.reduce((sum, inv) => {
+      const total = inv.total || inv.totals?.total || 0;
+      return sum + total;
+    }, 0);
+    document.getElementById('totalRevenue').textContent = `₹${totalRevenue.toFixed(2)}`;
+
+    // Total invoices
+    document.getElementById('totalInvoices').textContent = invoices.length;
+
+    // Unpaid amount (Pro feature - for now show 0)
+    const unpaidAmount = invoices
+      .filter(inv => inv.paymentStatus === 'unpaid' || inv.paymentStatus === 'overdue')
+      .reduce((sum, inv) => {
+        const total = inv.total || inv.totals?.total || 0;
+        return sum + total;
+      }, 0);
+    document.getElementById('unpaidAmount').textContent = `₹${unpaidAmount.toFixed(2)}`;
+
+    // Top client
+    const clientRevenue = {};
+    invoices.forEach(inv => {
+      const client = inv.clientName || 'Unknown';
+      const total = inv.total || inv.totals?.total || 0;
+      clientRevenue[client] = (clientRevenue[client] || 0) + total;
+    });
+    const topClient = Object.keys(clientRevenue).reduce((a, b) =>
+      clientRevenue[a] > clientRevenue[b] ? a : b, '');
+    document.getElementById('topClient').textContent = topClient || '-';
+
+    // Monthly breakdown
+    const monthlyData = {};
+    invoices.forEach(inv => {
+      const date = new Date(inv.date);
+      const monthYear = `${date.toLocaleString('default', { month: 'short' })} ${date.getFullYear()}`;
+      const total = inv.total || inv.totals?.total || 0;
+      monthlyData[monthYear] = (monthlyData[monthYear] || 0) + total;
+    });
+
+    const monthlyHTML = Object.keys(monthlyData).map(month => `
+      <div class="month-item">
+        <span class="month-name">${month}</span>
+        <span class="month-amount">₹${monthlyData[month].toFixed(2)}</span>
+      </div>
+    `).join('');
+
+    document.getElementById('monthlyBreakdown').innerHTML = monthlyHTML || '<p class="empty-state">No data available yet</p>';
+
+    // Payment status chart
+    const paidCount = invoices.filter(inv => inv.paymentStatus === 'paid').length;
+    const unpaidCount = invoices.filter(inv => inv.paymentStatus !== 'paid').length;
+    const total = invoices.length;
+
+    document.getElementById('paidCount').textContent = paidCount;
+    document.getElementById('unpaidCount').textContent = unpaidCount;
+    document.getElementById('paidBar').style.width = `${(paidCount / total) * 100}%`;
+    document.getElementById('unpaidBar').style.width = `${(unpaidCount / total) * 100}%`;
+  });
 }
 
 function showMainForm() {
   document.getElementById('settingsView').style.display = 'none';
   document.getElementById('historyView').style.display = 'none';
+  document.getElementById('analyticsView').style.display = 'none';
   document.getElementById('mainForm').style.display = 'block';
+
+  // Clear active nav buttons (main form has no active button)
+  document.getElementById('settingsBtn').classList.remove('active');
+  document.getElementById('historyBtn').classList.remove('active');
 }
 
 // Load Business Settings from Chrome Storage
@@ -189,6 +342,216 @@ async function saveSettings() {
     showToast('Settings saved successfully!', 'success');
     updateBusinessInfoDisplay();
     showMainForm();
+
+    // Track settings saved
+    if (typeof analytics !== 'undefined') {
+      analytics.trackSettingsSaved();
+    }
+  });
+}
+
+// ==================== LOGO UPLOAD ====================
+
+// Handle Logo Upload
+function handleLogoUpload(event) {
+  const file = event.target.files[0];
+
+  if (!file) return;
+
+  // Check file size (max 500KB)
+  if (file.size > 500 * 1024) {
+    showToast('Logo size must be less than 500KB', 'error');
+    return;
+  }
+
+  // Check file type
+  if (!['image/png', 'image/jpeg', 'image/jpg'].includes(file.type)) {
+    showToast('Logo must be PNG or JPG format', 'error');
+    return;
+  }
+
+  // Read file as base64
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const logoData = e.target.result;
+
+    // Save to storage (use local storage for logo to avoid sync quota limits)
+    chrome.storage.local.set({ businessLogo: logoData }, () => {
+      // Update preview
+      displayLogoPreview(logoData);
+      showToast('Logo uploaded successfully!', 'success');
+    });
+  };
+  reader.readAsDataURL(file);
+}
+
+// Display Logo Preview
+function displayLogoPreview(logoData) {
+  const logoImage = document.getElementById('logoImage');
+  const placeholder = document.querySelector('.logo-placeholder');
+  const removeBtn = document.getElementById('removeLogoBtn');
+
+  if (logoData) {
+    logoImage.src = logoData;
+    logoImage.style.display = 'block';
+    placeholder.style.display = 'none';
+    removeBtn.style.display = 'inline-block';
+  } else {
+    logoImage.style.display = 'none';
+    placeholder.style.display = 'flex';
+    removeBtn.style.display = 'none';
+  }
+}
+
+// Remove Logo
+function removeLogo() {
+  if (confirm('Are you sure you want to remove the logo?')) {
+    chrome.storage.local.remove('businessLogo', () => {
+      displayLogoPreview(null);
+      document.getElementById('businessLogo').value = '';
+      showToast('Logo removed', 'info');
+    });
+  }
+}
+
+// Load Logo on Settings Page
+async function loadBusinessLogo() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['businessLogo'], (result) => {
+      if (result.businessLogo) {
+        displayLogoPreview(result.businessLogo);
+      } else {
+        // No logo - show placeholder
+        displayLogoPreview(null);
+      }
+      resolve();
+    });
+  });
+}
+
+// ==================== SAVED ITEMS LIBRARY ====================
+
+// Add new item to library
+async function addSavedItem() {
+  const name = document.getElementById('newItemName').value.trim();
+  const rate = parseFloat(document.getElementById('newItemRate').value);
+  const description = document.getElementById('newItemDescription').value.trim();
+
+  // Validation
+  if (!name) {
+    showToast('Please enter item name', 'error');
+    return;
+  }
+
+  if (!rate || rate <= 0) {
+    showToast('Please enter a valid rate', 'error');
+    return;
+  }
+
+  // Check if user is Pro
+  const { isPro } = await new Promise((resolve) => {
+    chrome.storage.local.get(['isPro'], (result) => {
+      resolve({ isPro: result.isPro || false });
+    });
+  });
+
+  // Check existing saved items count (Free limit: 10)
+  const items = await new Promise((resolve) => {
+    chrome.storage.sync.get(null, (result) => resolve(result));
+  });
+
+  const existingSavedItems = Object.keys(items).filter(key => key.startsWith('saved_item_'));
+
+  if (!isPro && existingSavedItems.length >= 10) {
+    showToast('⚠️ Free plan limited to 10 saved items. Upgrade to Pro for unlimited!', 'error');
+    showUpgradeModal();
+    return;
+  }
+
+  // Create saved item
+  const savedItem = {
+    name: name,
+    rate: rate,
+    description: description || '',
+    savedAt: Date.now()
+  };
+
+  // Save to storage
+  const itemKey = `saved_item_${Date.now()}`;
+
+  chrome.storage.sync.set({ [itemKey]: savedItem }, () => {
+    showToast(`"${name}" added to library!`, 'success');
+
+    // Clear form
+    document.getElementById('newItemName').value = '';
+    document.getElementById('newItemRate').value = '';
+    document.getElementById('newItemDescription').value = '';
+
+    // Reload list
+    loadSavedItems();
+  });
+}
+
+// Load saved items into Settings view
+function loadSavedItems() {
+  chrome.storage.sync.get(null, (items) => {
+    const savedItems = Object.keys(items)
+      .filter(key => key.startsWith('saved_item_'))
+      .map(key => ({ key, ...items[key] }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    const savedItemsList = document.getElementById('savedItemsList');
+    const noItemsMsg = document.getElementById('noSavedItems');
+
+    if (savedItems.length === 0) {
+      noItemsMsg.style.display = 'block';
+      savedItemsList.innerHTML = '<p class="empty-state" id="noSavedItems">No saved items yet. Add your first item below.</p>';
+      return;
+    }
+
+    // Hide empty message
+    if (noItemsMsg) noItemsMsg.style.display = 'none';
+
+    // Generate saved items cards
+    const itemsHTML = savedItems.map(item => `
+      <div class="saved-item-card" data-key="${item.key}">
+        <div class="saved-item-info">
+          <div class="saved-item-name">${item.name}</div>
+          ${item.description ? `<div class="saved-item-desc">${item.description}</div>` : ''}
+          <div class="saved-item-rate">₹${item.rate.toFixed(2)}</div>
+        </div>
+        <button class="delete-saved-item-btn" data-key="${item.key}" style="background: #ef4444; color: white; border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600;">Delete</button>
+      </div>
+    `).join('');
+
+    savedItemsList.innerHTML = itemsHTML;
+
+    // Add delete event listeners
+    document.querySelectorAll('.delete-saved-item-btn').forEach(btn => {
+      btn.addEventListener('click', () => deleteSavedItem(btn.dataset.key));
+    });
+  });
+}
+
+// Delete saved item
+function deleteSavedItem(itemKey) {
+  if (confirm('Are you sure you want to delete this saved item?')) {
+    chrome.storage.sync.remove([itemKey], () => {
+      showToast('Saved item deleted', 'success');
+      loadSavedItems();
+    });
+  }
+}
+
+// Get all saved items for dropdown (used in invoice items)
+function getSavedItemsForDropdown(callback) {
+  chrome.storage.sync.get(null, (items) => {
+    const savedItems = Object.keys(items)
+      .filter(key => key.startsWith('saved_item_'))
+      .map(key => ({ key, ...items[key] }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    callback(savedItems);
   });
 }
 
@@ -241,7 +604,7 @@ async function loadClientTemplatesDropdown() {
 }
 
 // Save current client as template
-function saveClientTemplate() {
+async function saveClientTemplate() {
   const clientName = document.getElementById('clientName').value;
   const clientGSTIN = document.getElementById('clientGSTIN').value;
   const clientState = document.getElementById('clientState').value;
@@ -251,6 +614,28 @@ function saveClientTemplate() {
   // Validation
   if (!clientName || !clientState) {
     showToast('Please fill in Client Name and State to save template', 'error');
+    return;
+  }
+
+  // Check if user is Pro
+  const { isPro } = await new Promise((resolve) => {
+    chrome.storage.local.get(['isPro'], (result) => {
+      resolve({ isPro: result.isPro || false });
+    });
+  });
+
+  // Check existing templates count (Free limit: 5)
+  const items = await new Promise((resolve) => {
+    chrome.storage.sync.get(null, (result) => resolve(result));
+  });
+
+  const existingTemplates = Object.keys(items).filter(key => key.startsWith('client_template_'));
+  const templateKey = `client_template_${clientName.replace(/\s+/g, '_').toLowerCase()}`;
+  const isUpdating = items[templateKey]; // Check if updating existing template
+
+  if (!isPro && existingTemplates.length >= 5 && !isUpdating) {
+    showToast('⚠️ Free plan limited to 5 client templates. Upgrade to Pro for unlimited!', 'error');
+    showUpgradeModal();
     return;
   }
 
@@ -265,11 +650,14 @@ function saveClientTemplate() {
   };
 
   // Save to storage
-  const templateKey = `client_template_${clientName.replace(/\s+/g, '_').toLowerCase()}`;
-
   chrome.storage.sync.set({ [templateKey]: template }, () => {
     showToast(`Client "${clientName}" saved as template!`, 'success');
     loadClientTemplatesDropdown();
+
+    // Track client template saved
+    if (typeof analytics !== 'undefined') {
+      analytics.trackClientTemplateUsed('saved');
+    }
   });
 }
 
@@ -303,6 +691,11 @@ function loadClientTemplate() {
       if (!isInitializing) calculateTotals();
 
       showToast(`Client "${template.name}" loaded!`, 'success');
+
+      // Track client template loaded
+      if (typeof analytics !== 'undefined') {
+        analytics.trackClientTemplateUsed('loaded');
+      }
     }
   });
 }
@@ -318,6 +711,11 @@ function deleteClientTemplate(templateKey) {
 
     // Reload dropdown
     loadClientTemplatesDropdown();
+
+    // Track client template deleted
+    if (typeof analytics !== 'undefined') {
+      analytics.trackClientTemplateUsed('deleted');
+    }
   });
 }
 
@@ -648,51 +1046,134 @@ function addItem() {
   const itemId = Date.now();
   const itemIndex = invoiceItems.length;
 
-  const itemHTML = `
-    <div class="invoice-item" data-item-id="${itemId}">
-      <div class="item-header">
-        <span class="item-number">Item ${itemIndex + 1}</span>
-        <button class="remove-item-btn" data-item-id="${itemId}">Remove</button>
+  // Get saved items for dropdown
+  getSavedItemsForDropdown((savedItems) => {
+    const savedItemsDropdown = savedItems.length > 0 ? `
+      <div class="form-group" style="margin-bottom: 8px;">
+        <label style="font-size: 12px; color: #64748b;">💡 Quick Select from Saved Items (or enter manually below)</label>
+        <select class="saved-item-select" style="width: 100%; padding: 10px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 13px; background: white; cursor: pointer;">
+          <option value="">-- Or select from saved items --</option>
+          ${savedItems.map(item => `<option value="${item.key}" data-name="${item.name}" data-rate="${item.rate}" data-description="${item.description || ''}">${item.name} - ₹${item.rate.toFixed(2)}</option>`).join('')}
+        </select>
       </div>
-      <div class="item-row">
-        <div class="form-group">
-          <label>Description *</label>
-          <input type="text" class="item-description" placeholder="Service or product name" required>
+    ` : '';
+
+    const itemHTML = `
+      <div class="invoice-item" data-item-id="${itemId}">
+        <div class="item-header">
+          <span class="item-number">Item ${itemIndex + 1}</span>
+          <button class="remove-item-btn tooltip" data-tooltip="Remove this item" data-item-id="${itemId}">
+            <i class="fas fa-times"></i>
+          </button>
         </div>
-        <div class="form-group">
-          <label>Quantity *</label>
-          <input type="number" class="item-quantity" value="1" min="0.01" step="0.01" required>
+        ${savedItemsDropdown}
+        <div class="item-row">
+          <div class="form-group">
+            <label>Description *</label>
+            <input type="text" class="item-description" placeholder="Type item name or select from saved items above" required>
+            <small style="display: none; color: #667eea; font-size: 11px; cursor: pointer; margin-top: 4px;" class="save-to-library-link">💾 Save this item to library for future use</small>
+          </div>
+          <div class="form-group">
+            <label>Quantity *</label>
+            <input type="number" class="item-quantity" value="1" min="1" step="1" required>
+          </div>
+          <div class="form-group">
+            <label>Rate (₹) *</label>
+            <input type="number" class="item-rate" placeholder="0.00" min="0" step="0.01" required>
+          </div>
         </div>
-        <div class="form-group">
-          <label>Rate (₹) *</label>
-          <input type="number" class="item-rate" placeholder="0.00" min="0" step="0.01" required>
+        <div class="item-subtotal">
+          Subtotal: ₹<span class="item-subtotal-value">0.00</span>
         </div>
       </div>
-      <div class="item-subtotal">
-        Subtotal: ₹<span class="item-subtotal-value">0.00</span>
-      </div>
-    </div>
-  `;
+    `;
 
-  document.getElementById('itemsList').insertAdjacentHTML('beforeend', itemHTML);
+    document.getElementById('itemsList').insertAdjacentHTML('beforeend', itemHTML);
 
-  // Add event listeners to new item
-  const itemElement = document.querySelector(`[data-item-id="${itemId}"]`);
+    // Add event listeners to new item
+    const itemElement = document.querySelector(`[data-item-id="${itemId}"]`);
 
-  // Remove button listener
-  itemElement.querySelector('.remove-item-btn').addEventListener('click', () => {
-    removeItem(itemId);
+    // Remove button listener
+    itemElement.querySelector('.remove-item-btn').addEventListener('click', () => {
+      removeItem(itemId);
+    });
+
+    // Saved item select listener
+    const savedItemSelect = itemElement.querySelector('.saved-item-select');
+    if (savedItemSelect) {
+      savedItemSelect.addEventListener('change', (e) => {
+        const selectedOption = e.target.options[e.target.selectedIndex];
+        if (selectedOption.value) {
+          const name = selectedOption.dataset.name;
+          const rate = parseFloat(selectedOption.dataset.rate);
+          const description = selectedOption.dataset.description;
+
+          // Populate item fields
+          itemElement.querySelector('.item-description').value = description || name;
+          itemElement.querySelector('.item-rate').value = rate;
+
+          // Hide save to library link
+          itemElement.querySelector('.save-to-library-link').style.display = 'none';
+
+          // Trigger calculation
+          calculateTotals();
+
+          showToast(`"${name}" added to invoice`, 'success');
+        }
+      });
+    }
+
+    // Input listeners for automatic calculation
+    const quantityInput = itemElement.querySelector('.item-quantity');
+    const rateInput = itemElement.querySelector('.item-rate');
+    const descriptionInput = itemElement.querySelector('.item-description');
+    const saveToLibraryLink = itemElement.querySelector('.save-to-library-link');
+
+    // Quantity change - trigger calculation immediately
+    quantityInput.addEventListener('input', () => {
+      calculateTotals();
+    });
+
+    // Rate change - trigger calculation AND show save to library option
+    rateInput.addEventListener('input', () => {
+      calculateTotals();
+
+      // Show save to library link if both description and rate are filled
+      if (descriptionInput.value.trim() && rateInput.value) {
+        saveToLibraryLink.style.display = 'block';
+      }
+    });
+
+    // Description change - show "save to library" link if manually typed
+    descriptionInput.addEventListener('input', () => {
+      if (descriptionInput.value.trim() && rateInput.value) {
+        saveToLibraryLink.style.display = 'block';
+      }
+    });
+
+    // Save to library link click
+    saveToLibraryLink.addEventListener('click', () => {
+      const name = descriptionInput.value.trim();
+      const rate = parseFloat(rateInput.value);
+
+      if (name && rate > 0) {
+        const savedItem = {
+          name: name,
+          rate: rate,
+          description: name,
+          savedAt: Date.now()
+        };
+
+        const itemKey = `saved_item_${Date.now()}`;
+        chrome.storage.sync.set({ [itemKey]: savedItem }, () => {
+          showToast(`"${name}" saved to library!`, 'success');
+          saveToLibraryLink.style.display = 'none';
+        });
+      }
+    });
+
+    invoiceItems.push({ id: itemId, description: '', quantity: 1, rate: 0 });
   });
-
-  // Input listeners
-  itemElement.querySelector('.item-quantity').addEventListener('input', () => {
-    if (!isInitializing) calculateTotals();
-  });
-  itemElement.querySelector('.item-rate').addEventListener('input', () => {
-    if (!isInitializing) calculateTotals();
-  });
-
-  invoiceItems.push({ id: itemId, description: '', quantity: 1, rate: 0 });
 }
 
 // Add Initial Item
@@ -942,18 +1423,10 @@ async function checkUsage() {
       const usageText = document.getElementById('usageText');
       const upgradeBtn = document.getElementById('upgradeBtn');
 
-      if (isPro) {
-        usageText.textContent = '✨ Pro Member - Unlimited Invoices';
-        upgradeBtn.style.display = 'none';
-      } else {
-        usageText.textContent = `${usage.count} of 5 invoices used this month`;
-
-        if (usage.count >= 5) {
-          document.getElementById('usageCounter').classList.add('limit-reached');
-          upgradeBtn.style.display = 'inline-block';
-          document.getElementById('generatePdfBtn').disabled = true;
-        }
-      }
+      // Free and unlimited for everyone!
+      usageText.textContent = `🎉 FREE & UNLIMITED - ${usage.count} invoices generated this month`;
+      upgradeBtn.style.display = 'none';
+      document.getElementById('usageCounter').classList.remove('limit-reached');
 
       resolve({ usage, isPro });
     });
@@ -979,14 +1452,14 @@ function saveDraft() {
 }
 
 // Preview PDF - opens in browser without downloading
-function previewPDF() {
+async function previewPDF() {
   const data = collectInvoiceData();
 
   if (!validateInvoiceData(data)) return;
 
   try {
     // Generate PDF using jsPDF helper
-    const doc = createPDFFromData(data);
+    const doc = await createPDFFromData(data);
 
     // Create blob and open in new window (no download)
     const pdfBlob = doc.output('blob');
@@ -1014,18 +1487,13 @@ async function generatePDF() {
 
   if (!validateInvoiceData(data)) return;
 
-  // Check usage
-  const { usage, isPro } = await checkUsage();
-  if (!isPro && usage.count >= 5) {
-    showToast('Monthly limit reached! Upgrade to Pro for unlimited invoices.', 'error');
-    return;
-  }
-
+  // No usage limit - free and unlimited!
+  // Just increment counter for stats
   showToast('Generating PDF...', 'info');
 
   try {
     // Generate PDF using jsPDF helper
-    const doc = createPDFFromData(data);
+    const doc = await createPDFFromData(data);
 
     // Save the PDF
     doc.save(`Invoice-${data.invoiceNumber}.pdf`);
@@ -1040,6 +1508,17 @@ async function generatePDF() {
     chrome.storage.sync.set({ lastInvoiceNumber: currentInvoiceNumber });
 
     showToast('Invoice PDF generated successfully!', 'success');
+
+    // Track invoice generation
+    if (typeof analytics !== 'undefined') {
+      analytics.trackInvoiceGenerated({
+        invoiceNumber: data.invoiceNumber,
+        hasGST: data.yourDetails.gstin ? true : false,
+        itemCount: data.items.length,
+        totalAmount: data.total,
+        invoiceType: data.yourDetails.state === data.clientState ? 'intrastate' : 'interstate'
+      });
+    }
 
     // Clear draft after successful generation
     clearDraft();
@@ -1207,20 +1686,23 @@ function loadInvoiceHistory() {
       return;
     }
 
-    historyList.innerHTML = invoices.map(inv => `
+    historyList.innerHTML = invoices.map(inv => {
+      const total = inv.total || inv.totals?.total || 0;
+      return `
       <div class="history-item">
         <div class="history-header">
-          <span class="history-invoice-number">${inv.invoiceNumber}</span>
-          <span class="history-date">${new Date(inv.date).toLocaleDateString('en-IN')}</span>
+          <span class="history-invoice-number">${inv.invoiceNumber || 'N/A'}</span>
+          <span class="history-date">${inv.date ? new Date(inv.date).toLocaleDateString('en-IN') : 'N/A'}</span>
         </div>
-        <div class="history-client">${inv.clientName}</div>
-        <div class="history-amount">₹${inv.total.toFixed(2)}</div>
+        <div class="history-client">${inv.clientName || 'Unknown Client'}</div>
+        <div class="history-amount">₹${total.toFixed(2)}</div>
         <div class="history-actions">
           <button class="regenerate-btn" data-key="${inv.key}">Regenerate PDF</button>
           <button class="delete-btn" data-key="${inv.key}">Delete</button>
         </div>
       </div>
-    `).join('');
+      `;
+    }).join('');
 
     // Add event listeners for history buttons
     document.querySelectorAll('.regenerate-btn').forEach(btn => {
@@ -1233,90 +1715,142 @@ function loadInvoiceHistory() {
 }
 
 // Helper function to create PDF from invoice data using jsPDF
-function createPDFFromData(data) {
+async function createPDFFromData(data) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
 
   const isIntraState = data.yourDetails.state === data.clientState;
 
-  // Header with gradient-like color
-  doc.setFillColor(102, 126, 234);
-  doc.rect(0, 0, 210, 35, 'F');
+  // ========== STANDARD GST INVOICE FORMAT ==========
 
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(24);
+  // Add logo if available (top-left, professional placement)
+  const logoData = await new Promise((resolve) => {
+    chrome.storage.local.get(['businessLogo'], (result) => {
+      resolve(result.businessLogo || null);
+    });
+  });
+
+  let startX = 15;
+  let startY = 15;
+
+  if (logoData) {
+    try {
+      // Detect image format from base64 data
+      let imageFormat = 'PNG';
+      if (logoData.includes('data:image/jpeg')) {
+        imageFormat = 'JPEG';
+      } else if (logoData.includes('data:image/jpg')) {
+        imageFormat = 'JPEG';
+      } else if (logoData.includes('data:image/png')) {
+        imageFormat = 'PNG';
+      }
+
+      console.log('Adding logo to PDF, format:', imageFormat);
+
+      // Add logo with border
+      doc.addImage(logoData, imageFormat, startX, startY, 25, 25);
+      doc.setDrawColor(200, 200, 200);
+      doc.setLineWidth(0.5);
+      doc.rect(startX, startY, 25, 25);
+      startX = 45; // Move company details to right of logo
+
+      console.log('Logo added successfully');
+    } catch (error) {
+      console.error('Error adding logo to PDF:', error);
+      console.error('Logo data preview:', logoData ? logoData.substring(0, 100) : 'null');
+      // Continue without logo if error occurs
+      startX = 15; // Reset to default position
+    }
+  } else {
+    console.log('No logo data found in storage');
+  }
+
+  // Company Details (Seller) - Top Left
   doc.setFont('helvetica', 'bold');
-  doc.text('TAX INVOICE', 105, 15, { align: 'center' });
+  doc.setFontSize(14);
+  doc.text(data.yourDetails.name, startX, startY + 5);
 
-  doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
-  doc.text('Generated by BillStack', 105, 25, { align: 'center' });
-
-  // Reset text color
-  doc.setTextColor(0, 0, 0);
-
-  // Invoice metadata (top right)
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'bold');
-  let y = 45;
-  doc.text(`Invoice #: ${data.invoiceNumber}`, 140, y);
-  doc.setFont('helvetica', 'normal');
-  doc.text(`Date: ${new Date(data.date).toLocaleDateString('en-IN')}`, 140, y + 6);
-  doc.text(`Due: ${new Date(data.dueDate).toLocaleDateString('en-IN')}`, 140, y + 12);
-
-  // From Details
-  y = 45;
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
-  doc.text('FROM:', 15, y);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
-  doc.text(data.yourDetails.name, 15, y + 7);
   doc.setFontSize(9);
-  doc.text(`GSTIN: ${data.yourDetails.gstin}`, 15, y + 13);
+  doc.text(`GSTIN: ${data.yourDetails.gstin}`, startX, startY + 11);
 
-  // Split address into lines
-  const fromAddress = doc.splitTextToSize(data.yourDetails.address, 80);
-  doc.text(fromAddress, 15, y + 19);
+  const addressLines = doc.splitTextToSize(data.yourDetails.address, 80);
+  doc.text(addressLines, startX, startY + 16);
 
-  let fromY = y + 19 + (fromAddress.length * 5);
+  let addressHeight = addressLines.length * 4;
 
   if (data.yourDetails.email) {
-    doc.text(data.yourDetails.email, 15, fromY + 5);
-    fromY += 5;
+    doc.text(`Email: ${data.yourDetails.email}`, startX, startY + 16 + addressHeight + 1);
+    addressHeight += 5;
   }
   if (data.yourDetails.phone) {
-    doc.text(data.yourDetails.phone, 15, fromY + 5);
+    doc.text(`Phone: ${data.yourDetails.phone}`, startX, startY + 16 + addressHeight + 1);
   }
 
-  // Bill To Details - position below FROM section with enough space
-  y = Math.max(95, fromY + 15);
+  // TAX INVOICE Title - Top Right
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(18);
+  doc.text('TAX INVOICE', 195, 20, { align: 'right' });
+
+  // Invoice Details Box - Top Right
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Invoice No:', 150, 30);
+  doc.text('Invoice Date:', 150, 36);
+  doc.text('Due Date:', 150, 42);
+
+  doc.setFont('helvetica', 'normal');
+  doc.text(data.invoiceNumber, 178, 30);
+  doc.text(new Date(data.date).toLocaleDateString('en-IN'), 178, 36);
+  doc.text(new Date(data.dueDate).toLocaleDateString('en-IN'), 178, 42);
+
+  // Draw horizontal line separator
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.5);
+  doc.line(15, 50, 195, 50);
+
+  // Bill To Section (Buyer Details)
+  let y = 58;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
   doc.text('BILL TO:', 15, y);
-  doc.setFont('helvetica', 'normal');
+
+  doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
-  doc.text(data.clientName, 15, y + 7);
+  doc.text(data.clientName, 15, y + 6);
+
+  doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
 
   if (data.clientGSTIN) {
-    doc.text(`GSTIN: ${data.clientGSTIN}`, 15, y + 13);
+    doc.text(`GSTIN: ${data.clientGSTIN}`, 15, y + 12);
   }
 
-  let clientY = y + (data.clientGSTIN ? 19 : 13);
+  let clientY = y + (data.clientGSTIN ? 18 : 12);
 
   if (data.clientAddress) {
     const toAddress = doc.splitTextToSize(data.clientAddress, 80);
     doc.text(toAddress, 15, clientY);
-    clientY += toAddress.length * 5;
+    clientY += toAddress.length * 4;
   }
 
   if (data.clientEmail) {
-    doc.text(data.clientEmail, 15, clientY + 5);
+    doc.text(`Email: ${data.clientEmail}`, 15, clientY + 4);
+    clientY += 5;
   }
 
+  // Place of Supply
+  doc.setFont('helvetica', 'bold');
+  doc.text(`Place of Supply: `, 15, clientY + 4);
+  doc.setFont('helvetica', 'normal');
+  doc.text(data.clientState, 48, clientY + 4);
+
   // Items Table - position with proper spacing
-  y = Math.max(135, clientY + 15);
+  y = Math.max(105, clientY + 15);
+
+  // Draw table border
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.5);
 
   // Table headers
   doc.setFillColor(240, 240, 240);
@@ -1404,12 +1938,12 @@ function createPDFFromData(data) {
 }
 
 // Regenerate Invoice from History
-function regenerateInvoice(key) {
-  chrome.storage.local.get([key], (result) => {
+async function regenerateInvoice(key) {
+  chrome.storage.local.get([key], async (result) => {
     const data = result[key];
     if (data) {
       try {
-        const doc = createPDFFromData(data);
+        const doc = await createPDFFromData(data);
         doc.save(`Invoice-${data.invoiceNumber}.pdf`);
         showToast('Invoice PDF regenerated!', 'success');
       } catch (error) {
@@ -1430,9 +1964,174 @@ function deleteInvoice(key) {
   }
 }
 
+// ==================== MODALS & ONBOARDING ====================
+
 // Show Upgrade Modal
 function showUpgradeModal() {
-  alert('Upgrade to Pro:\n\n✨ Unlimited invoices\n✨ Custom templates\n✨ Recurring invoices\n✨ Email directly\n✨ Cloud sync\n\nPricing: ₹299/month or ₹2,999/year\n\nComing soon in Week 3!');
+  const modal = document.getElementById('upgradeModal');
+  modal.style.display = 'flex';
+
+  // Setup event listeners
+  setupUpgradeModalListeners();
+}
+
+function setupUpgradeModalListeners() {
+  // Close button
+  const closeBtn = document.getElementById('closeUpgradeModal');
+  if (closeBtn) {
+    closeBtn.onclick = closeUpgradeModal;
+  }
+
+  // Skip link
+  const skipLink = document.getElementById('skipUpgrade');
+  if (skipLink) {
+    skipLink.onclick = (e) => {
+      e.preventDefault();
+      closeUpgradeModal();
+    };
+  }
+
+  // Monthly plan button
+  const monthlyBtn = document.getElementById('upgradeMonthlyBtn');
+  if (monthlyBtn) {
+    monthlyBtn.onclick = () => upgradeToPro('monthly');
+  }
+
+  // Annual plan button
+  const annualBtn = document.getElementById('upgradeAnnualBtn');
+  if (annualBtn) {
+    annualBtn.onclick = () => upgradeToPro('annual');
+  }
+
+  // Analytics upgrade button
+  const analyticsUpgradeBtn = document.getElementById('analyticsUpgradeBtn');
+  if (analyticsUpgradeBtn) {
+    analyticsUpgradeBtn.onclick = () => upgradeToPro('monthly');
+  }
+
+  // Close on overlay click
+  const overlay = document.querySelector('#upgradeModal .modal-overlay');
+  if (overlay) {
+    overlay.onclick = closeUpgradeModal;
+  }
+}
+
+function closeUpgradeModal() {
+  document.getElementById('upgradeModal').style.display = 'none';
+}
+
+// Upgrade to Pro
+function upgradeToPro(plan) {
+  // Track upgrade click
+  if (typeof analytics !== 'undefined') {
+    analytics.trackUpgradeClick(plan);
+  }
+
+  // For now, show coming soon message
+  // In Week 4, this will integrate with Stripe
+  showToast('🚀 Stripe integration coming soon! For now, enjoy the free tier.', 'info');
+  closeUpgradeModal();
+
+  // TODO: Implement Stripe checkout
+  // const planId = plan === 'monthly' ? 'price_monthly_299' : 'price_annual_2999';
+  // window.open(`https://your-backend.com/checkout?plan=${planId}`, '_blank');
+}
+
+// Onboarding Flow
+function checkAndShowOnboarding() {
+  chrome.storage.local.get(['hasSeenOnboarding'], (result) => {
+    if (!result.hasSeenOnboarding) {
+      showOnboardingModal();
+    }
+  });
+}
+
+function showOnboardingModal() {
+  const modal = document.getElementById('onboardingModal');
+  modal.style.display = 'flex';
+  showOnboardingStep(1);
+
+  // Setup event listeners for onboarding buttons
+  setupOnboardingListeners();
+}
+
+function setupOnboardingListeners() {
+  // Get Started button (Step 1)
+  const nextBtn = document.getElementById('onboardingNextBtn');
+  if (nextBtn) {
+    nextBtn.onclick = () => showOnboardingStep(2);
+  }
+
+  // Set Up Now button (Step 2)
+  const setupBtn = document.getElementById('onboardingSetupBtn');
+  if (setupBtn) {
+    setupBtn.onclick = () => {
+      // Close onboarding
+      document.getElementById('onboardingModal').style.display = 'none';
+      // Mark as seen
+      chrome.storage.local.set({ hasSeenOnboarding: true });
+      // Track onboarding completion
+      if (typeof analytics !== 'undefined') {
+        analytics.trackOnboardingCompleted('setup');
+      }
+      // Show settings
+      showSettings();
+    };
+  }
+
+  // Skip for Now button (Step 2)
+  const skipBtn = document.getElementById('onboardingSkipBtn');
+  if (skipBtn) {
+    skipBtn.onclick = () => {
+      // Track onboarding skipped
+      if (typeof analytics !== 'undefined') {
+        analytics.trackOnboardingSkipped('step2');
+      }
+      showOnboardingStep(3);
+    };
+  }
+
+  // Start Creating Invoices button (Step 3)
+  const finishBtn = document.getElementById('onboardingFinishBtn');
+  if (finishBtn) {
+    finishBtn.onclick = () => {
+      document.getElementById('onboardingModal').style.display = 'none';
+      chrome.storage.local.set({ hasSeenOnboarding: true });
+      // Track onboarding completion
+      if (typeof analytics !== 'undefined') {
+        analytics.trackOnboardingCompleted('finish');
+      }
+    };
+  }
+}
+
+function showOnboardingStep(step) {
+  // Hide all steps
+  document.getElementById('onboardingStep1').style.display = 'none';
+  document.getElementById('onboardingStep2').style.display = 'none';
+  document.getElementById('onboardingStep3').style.display = 'none';
+
+  // Show current step
+  document.getElementById(`onboardingStep${step}`).style.display = 'block';
+}
+
+// Enhanced checkUsage with modal trigger
+async function checkUsageEnhanced() {
+  const result = await checkUsage();
+
+  // Show upgrade modal if limit reached and not Pro
+  if (!result.isPro && result.usage.count >= 5) {
+    // Don't show immediately, wait for user action
+    document.getElementById('generatePdfBtn').addEventListener('click', (e) => {
+      if (result.usage.count >= 5) {
+        e.preventDefault();
+        e.stopPropagation();
+        showUpgradeModal();
+      }
+    }, { once: true });
+  }
+
+  return result;
 }
 
 // Show Toast Notification
@@ -1445,5 +2144,10 @@ function showToast(message, type = 'info') {
     toast.classList.remove('show');
   }, 3000);
 }
+
+// Check onboarding on load (call this in DOMContentLoaded)
+setTimeout(() => {
+  checkAndShowOnboarding();
+}, 1000); // Delay to let main UI load first
 
 })(); // End IIFE

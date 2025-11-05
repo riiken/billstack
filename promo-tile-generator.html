@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BillStack Promotional Tile Generator</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      max-width: 1000px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    h1 {
+      color: #667eea;
+      margin-bottom: 10px;
+    }
+    .subtitle {
+      color: #666;
+      margin-bottom: 30px;
+    }
+    .preview-section {
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .canvas-container {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      align-items: center;
+      margin: 30px 0;
+    }
+    .canvas-item {
+      text-align: center;
+    }
+    canvas {
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .canvas-item p {
+      margin-top: 10px;
+      font-size: 12px;
+      color: #666;
+      font-weight: 600;
+    }
+    button {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      margin: 10px;
+      transition: background 0.2s;
+    }
+    button:hover {
+      background: #5568d3;
+    }
+    .instructions {
+      background: #e8f4f8;
+      padding: 20px;
+      border-radius: 8px;
+      border-left: 4px solid #667eea;
+      margin-top: 20px;
+    }
+    .instructions h3 {
+      margin-top: 0;
+      color: #667eea;
+    }
+    .instructions ol {
+      margin: 10px 0;
+      padding-left: 20px;
+    }
+    .instructions li {
+      margin: 8px 0;
+      color: #333;
+    }
+  </style>
+</head>
+<body>
+  <h1>📊 BillStack Promotional Tile Generator</h1>
+  <p class="subtitle">Generate promotional images for Chrome Web Store listing</p>
+
+  <div class="preview-section">
+    <h2>Small Promotional Tile (440x280) - Required</h2>
+    <div class="canvas-container">
+      <div class="canvas-item">
+        <canvas id="smallTile" width="440" height="280"></canvas>
+        <p>440×280 (Small Tile - Required)</p>
+      </div>
+    </div>
+
+    <div style="text-align: center;">
+      <button onclick="downloadTile('smallTile', 'billstack-small-tile-440x280.png')">⬇️ Download Small Tile</button>
+    </div>
+  </div>
+
+  <div class="preview-section">
+    <h2>Marquee Promotional Tile (1400x560) - Optional</h2>
+    <div class="canvas-container">
+      <div class="canvas-item">
+        <canvas id="marqueeTile" width="1400" height="560"></canvas>
+        <p>1400×560 (Marquee - Optional)</p>
+      </div>
+    </div>
+
+    <div style="text-align: center;">
+      <button onclick="downloadTile('marqueeTile', 'billstack-marquee-1400x560.png')">⬇️ Download Marquee</button>
+    </div>
+  </div>
+
+  <div class="instructions">
+    <h3>📝 Instructions</h3>
+    <ol>
+      <li>Click "Download Small Tile" to save the required 440x280 promotional image</li>
+      <li>Optionally download the marquee tile (1400x560) for featured placement</li>
+      <li>Upload these images to Chrome Web Store during submission</li>
+      <li>The small tile is REQUIRED, marquee is optional but recommended</li>
+    </ol>
+  </div>
+
+  <script>
+    // Generate Small Tile (440x280) - Required
+    function generateSmallTile() {
+      const canvas = document.getElementById('smallTile');
+      const ctx = canvas.getContext('2d');
+
+      // Background gradient
+      const gradient = ctx.createLinearGradient(0, 0, 440, 280);
+      gradient.addColorStop(0, '#667eea');
+      gradient.addColorStop(1, '#764ba2');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, 440, 280);
+
+      // Draw icon (simplified bills/invoice icon)
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+      // Back paper
+      ctx.fillRect(60, 60, 80, 100);
+      // Middle paper
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+      ctx.fillRect(65, 65, 80, 100);
+      // Front paper
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+      ctx.fillRect(70, 70, 80, 100);
+
+      // Add lines on front paper
+      ctx.strokeStyle = '#667eea';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(80, 95);
+      ctx.lineTo(140, 95);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(80, 110);
+      ctx.lineTo(140, 110);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(80, 125);
+      ctx.lineTo(120, 125);
+      ctx.stroke();
+
+      // BillStack text
+      ctx.fillStyle = 'white';
+      ctx.font = 'bold 48px Arial';
+      ctx.fillText('BillStack', 170, 100);
+
+      // Tagline
+      ctx.font = '20px Arial';
+      ctx.fillText('Free GST Invoices', 170, 130);
+
+      // Subtitle
+      ctx.font = '16px Arial';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+      ctx.fillText('Generate invoices in 30 seconds', 170, 155);
+
+      // Badge
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+      ctx.beginPath();
+      ctx.roundRect(300, 200, 120, 40, 20);
+      ctx.fill();
+
+      ctx.fillStyle = 'white';
+      ctx.font = 'bold 18px Arial';
+      ctx.fillText('Unlimited', 315, 227);
+    }
+
+    // Generate Marquee Tile (1400x560) - Optional
+    function generateMarqueeTile() {
+      const canvas = document.getElementById('marqueeTile');
+      const ctx = canvas.getContext('2d');
+
+      // Background gradient
+      const gradient = ctx.createLinearGradient(0, 0, 1400, 560);
+      gradient.addColorStop(0, '#667eea');
+      gradient.addColorStop(1, '#764ba2');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, 1400, 560);
+
+      // Left side - Icon and branding
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+      // Back paper
+      ctx.fillRect(80, 120, 160, 200);
+      // Middle paper
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+      ctx.fillRect(90, 130, 160, 200);
+      // Front paper
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+      ctx.fillRect(100, 140, 160, 200);
+
+      // Add lines
+      ctx.strokeStyle = '#667eea';
+      ctx.lineWidth = 3;
+      [180, 210, 240, 270].forEach(y => {
+        ctx.beginPath();
+        ctx.moveTo(120, y);
+        ctx.lineTo(240, y);
+        ctx.stroke();
+      });
+
+      // Title
+      ctx.fillStyle = 'white';
+      ctx.font = 'bold 72px Arial';
+      ctx.fillText('BillStack', 320, 180);
+
+      // Tagline
+      ctx.font = 'bold 36px Arial';
+      ctx.fillText('Free GST Invoice Generator', 320, 230);
+
+      // Features
+      ctx.font = '24px Arial';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+      const features = [
+        '✓ Unlimited invoices',
+        '✓ Professional GST format',
+        '✓ 30-second generation',
+        '✓ 100% Free'
+      ];
+
+      features.forEach((feature, index) => {
+        ctx.fillText(feature, 320, 280 + (index * 40));
+      });
+
+      // Badge
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+      ctx.beginPath();
+      ctx.roundRect(1100, 400, 250, 80, 40);
+      ctx.fill();
+
+      ctx.fillStyle = 'white';
+      ctx.font = 'bold 32px Arial';
+      ctx.fillText('Install Free', 1140, 450);
+    }
+
+    // Download tile
+    function downloadTile(canvasId, filename) {
+      const canvas = document.getElementById(canvasId);
+      const link = document.createElement('a');
+      link.download = filename;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+
+      alert(`${filename} downloaded!\\n\\nUpload this to Chrome Web Store under "Promotional images"`);
+    }
+
+    // Generate tiles on load
+    window.onload = function() {
+      generateSmallTile();
+      generateMarqueeTile();
+    };
+
+    // Polyfill for roundRect (for older browsers)
+    if (!CanvasRenderingContext2D.prototype.roundRect) {
+      CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
+        if (w < 2 * r) r = w / 2;
+        if (h < 2 * r) r = h / 2;
+        this.beginPath();
+        this.moveTo(x + r, y);
+        this.arcTo(x + w, y, x + w, y + h, r);
+        this.arcTo(x + w, y + h, x, y + h, r);
+        this.arcTo(x, y + h, x, y, r);
+        this.arcTo(x, y, x + w, y, r);
+        this.closePath();
+        return this;
+      };
+    }
+  </script>
+</body>
+</html>
