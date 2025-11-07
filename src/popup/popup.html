@@ -13,6 +13,9 @@
     <header class="header">
       <h1><i class="fas fa-file-invoice"></i> BillStack</h1>
       <div class="header-actions">
+        <button id="feedbackBtnHeader" class="nav-btn tooltip" data-tooltip="Share your feedback" style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white;">
+          <i class="fas fa-comment-dots"></i>
+        </button>
         <button id="historyBtn" class="nav-btn tooltip" data-tooltip="View invoice history">
           <i class="fas fa-history"></i>
         </button>
@@ -254,6 +257,13 @@
           </div>
         </details>
       </div>
+
+      <!-- Feedback Link -->
+      <div style="text-align: center; margin-top: 12px; font-size: 11px;">
+        <a href="#" id="feedbackLinkMain" style="color: #3b82f6; text-decoration: none; font-weight: 500;">
+          <i class="fas fa-comment-dots"></i> Share Feedback
+        </a>
+      </div>
     </div>
 
     <!-- Settings View (Hidden by default) -->
@@ -410,6 +420,19 @@
         <hr style="margin: 24px 0; border: none; border-top: 2px solid #e2e8f0;">
 
         <button id="saveSettingsBtn" class="btn-primary">Save Settings</button>
+
+        <!-- Feedback Section -->
+        <div style="margin-top: 24px; padding: 16px; background: #f0f9ff; border-radius: 10px; border: 2px solid #bfdbfe; text-align: center;">
+          <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 8px; color: #1e40af;">
+            <i class="fas fa-comment-dots"></i> Share Your Feedback
+          </h3>
+          <p style="font-size: 12px; color: #3b82f6; margin-bottom: 12px;">
+            Help us improve BillStack! Your thoughts and suggestions matter.
+          </p>
+          <button id="feedbackBtn" class="btn-secondary" style="width: 100%;">
+            <i class="fas fa-external-link-alt"></i> Give Feedback
+          </button>
+        </div>
       </div>
     </div>
 

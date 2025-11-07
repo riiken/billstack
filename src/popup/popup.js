@@ -9,6 +9,9 @@
   }
   window.billStackInitialized = true;
 
+// Configuration
+const FEEDBACK_FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSdWOQmkaGb2RBLLtc_FPk95KOXR1Es9nXXj1ckKApjfhZq-UQ/viewform?usp=sharing&ouid=117269674292990812029';
+
 // Global state
 let businessSettings = null;
 let invoiceItems = [];
@@ -126,6 +129,14 @@ function initializeEventListeners() {
 
   // Upgrade button
   document.getElementById('upgradeBtn').addEventListener('click', showUpgradeModal);
+
+  // Feedback buttons
+  document.getElementById('feedbackBtn').addEventListener('click', openFeedbackForm);
+  document.getElementById('feedbackBtnHeader').addEventListener('click', openFeedbackForm);
+  document.getElementById('feedbackLinkMain').addEventListener('click', (e) => {
+    e.preventDefault();
+    openFeedbackForm();
+  });
 
   // Setup accordions
   setupAccordions();
@@ -2035,6 +2046,25 @@ function upgradeToPro(plan) {
   // TODO: Implement Stripe checkout
   // const planId = plan === 'monthly' ? 'price_monthly_299' : 'price_annual_2999';
   // window.open(`https://your-backend.com/checkout?plan=${planId}`, '_blank');
+}
+
+// Feedback Form
+function openFeedbackForm() {
+  // Track feedback click
+  if (typeof analytics !== 'undefined') {
+    analytics.trackButtonClick('feedback_form', 'feedback_button');
+  }
+
+  // Check if feedback URL is configured
+  if (FEEDBACK_FORM_URL === 'YOUR_GOOGLE_FORM_URL_HERE') {
+    showToast('⚠️ Feedback form URL not configured yet. Please update FEEDBACK_FORM_URL in popup.js', 'warning');
+    return;
+  }
+
+  // Open feedback form in new tab
+  chrome.tabs.create({ url: FEEDBACK_FORM_URL });
+
+  showToast('📝 Thank you for sharing your feedback!', 'success');
 }
 
 // Onboarding Flow
